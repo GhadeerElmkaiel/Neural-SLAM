@@ -10,7 +10,7 @@ config_path = "configs/tasks/pointnav_test.yaml"
 def transform_rgb_bgr(image):
     return image[:, :, [2, 1, 0]]
 
-map_size_cm - 2400
+map_size_cm = 2400
 
 # Prepare parameters for the mapper "MapBuilder" object
 def build_mapper():

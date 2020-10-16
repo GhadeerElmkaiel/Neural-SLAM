@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import PIL as Image
 import random
+from env import construct_envs
 
 config_path = "configs/tasks/pointnav_test.yaml"
 
@@ -22,7 +23,7 @@ def build_mapper():
     params['map_size_cm'] = map_size_cm #      self.args.map_size_cm
     params['agent_min_z'] = 25
     params['agent_max_z'] = 150
-    params['agent_height'] = 1.25 #     self.args.camera_height * 100
+    params['agent_height'] = 1.25 * 100 #     self.args.camera_height * 100
     params['agent_view_angle'] = 0
     params['du_scale'] = 2 #            self.args.du_scale
     params['vision_range'] = 64 #       self.args.vision_range

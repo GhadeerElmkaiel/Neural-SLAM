@@ -1,0 +1,11 @@
+Notes about Habitat Project
+
+To create the local map it is necessary to transfer the depth image to pointcloud.
+Then from the points it would be possible to have top-down projection and create the local map. 
+
+The depth image has the depth values as a distance from the camera view plane (Not distance from the camera)
+Depth image -----(get_point_cloud_from_z)-----> pointcloud with midel values considered on floor level
+pointcloud on floor level ----(transform_camera_view)----> pointcloud with correct vales 
+----(transform_pose)----> agent in the bottom center of the image heading upward
+pointcloud ----(bin_points)----> 3D array with x, y values (one of multiple z values) (voxeling the space)
+

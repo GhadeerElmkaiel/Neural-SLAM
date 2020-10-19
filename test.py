@@ -3,8 +3,15 @@ import numpy as np
 import cv2
 import PIL as Image
 import random
-from env import construct_envs
+from env import make_vec_envs
 
+
+
+from arguments import get_args
+
+args = get_args()
+
+# config_path = "/home/ghadeer/Projects/Neural-SLAM/Neural-SLAM/configs/tasks/pointnav_test.yaml"
 config_path = "configs/tasks/pointnav_test.yaml"
 
 # This function is for cv2 showing images
@@ -53,6 +60,10 @@ def test():
     cv2.imshow("RGB", bgr)
     cv2.imshow("D", obs["depth"])
     cv2.waitKey(0)
+
+    print(args)
+    envs = make_vec_envs(args)
+    print(envs)
 
 if __name__ == "__main__":
     test()

@@ -61,7 +61,7 @@ def test():
     cv2.imshow("D", obs["depth"])
     cv2.waitKey(0)
 
-    print(args)
+    # print(args)
     envs = make_vec_envs(args)
     print(envs)
 

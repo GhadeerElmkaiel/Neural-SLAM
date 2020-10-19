@@ -86,8 +86,9 @@ def construct_envs(args):
         config_env.freeze()
         env_configs.append(config_env)
 
-        config_baseline = cfg_baseline()
-        baseline_configs.append(config_baseline)
+        # Baseline configs are not used
+        # config_baseline = cfg_baseline()
+        # baseline_configs.append(config_baseline)
 
         args_list.append(args)
 

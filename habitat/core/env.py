@@ -333,6 +333,7 @@ class RLEnv(gym.Env):
         self.action_space = self._env.action_space
         self.number_of_episodes = self._env.number_of_episodes
         self.reward_range = self.get_reward_range()
+        
 
     @property
     def habitat_env(self) -> Env:

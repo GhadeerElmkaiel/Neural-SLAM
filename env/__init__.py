@@ -1,6 +1,7 @@
 # This code was addapted from
 # https://github.com/devendrachaplot/Neural-SLAM/blob/master/env/__init__.py
 import torch
+import numpy as np
 
 from .habitat import construct_envs
 
@@ -16,12 +17,15 @@ class VecPyTorch():
     def __init__(self, venv, device):
         self.venv = venv
         self.num_envs = venv.num_envs
-        self.observation_space = venv.observation_space
-        self.action_space = venv.action_space
+        self.observation_space = venv.observation_spaces
+        self.action_space = venv.action_spaces
         self.device = device
 
     def reset(self):
-        obs, info = self.venv.reset()
+        r = self.venv.reset()
+        obs = np.array([x[0] for x in r])
+        info = [x[1] for x in r]
+        # obs, info = self.venv.reset()
         obs = torch.from_numpy(obs).float().to(self.device)
         return obs, info
 

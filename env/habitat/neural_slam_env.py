@@ -60,14 +60,15 @@ class Neural_SLAM_Env(habitat.RLEnv):
         self.dt = 10
         self.timestep = 0
 
+
         #TODO def noisy actions 
 
-        config_env.defrost()
-        config_env.SIMULATOR.ACTION_SPACE_CONFIG = "CustomActionSpaceConfiguration"
-        config_env.freeze()
+        # config_env.defrost()
+        # config_env.SIMULATOR.ACTION_SPACE_CONFIG = "CustomActionSpaceConfiguration"
+        # config_env.freeze()
 
-        super.__init__(config_env, dataset)
-
+        super().__init__(config_env, dataset)
+        
         self.action_space = gym.spaces.Discrete(self.num_actions)
 
         self.observation_space = gym.spaces.Box(0, 255,
@@ -81,7 +82,7 @@ class Neural_SLAM_Env(habitat.RLEnv):
         
         self.res = transforms.Compose([transforms.ToPILImage(),
                     transforms.Resize((args.frame_height, args.frame_width),
-                                      interpolation = Image.NEAREST)])
+                                      interpolation = Image.Image.NEAREST)])
         self.scene_name = None
         self.maps_dict = {}
 
@@ -158,7 +159,7 @@ class Neural_SLAM_Env(habitat.RLEnv):
             self.mapper.update_map(depth, mapper_gt_pose)
 
         # Initialize variables
-        self.scene_name = self.habitat_env.sim.config.SCENE
+        self.scene_name = self.habitat_env.sim.config.sim_cfg.scene.id
         self.visited = np.zeros(self.map.shape)
         self.visited_vis = np.zeros(self.map.shape)
         self.visited_gt = np.zeros(self.map.shape)
@@ -175,7 +176,6 @@ class Neural_SLAM_Env(habitat.RLEnv):
         }
 
         self.save_position()
-
         return state, self.info
     
     def get_sim_location(self):
@@ -220,7 +220,7 @@ class Neural_SLAM_Env(habitat.RLEnv):
 
     # Get Map from Simulator
     def _get_gt_map(self, full_map_size):
-        self.scene_name = self.habitat_env.sim.config.SCENE
+        self.scene_name = self.habitat_env.sim.config.sim_cfg.scene.id #SCENE
         logger.error('Computing map for %s', self.scene_name)
 
         # Get map in habitat simulator coordinates

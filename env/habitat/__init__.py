@@ -25,7 +25,7 @@ def make_env_fn(args, config_env, rank):
 
 def construct_envs(args):
     env_configs = []
-    baseline_configs = []
+    # baseline_configs = []
     args_list = []
 
     basic_config = cfg_env(config_paths=
@@ -101,18 +101,6 @@ def construct_envs(args):
             )
         ),
     )
-
-    '''
-    envs = VectorEnv(
-        make_env_fn=make_env_fn,
-        env_fn_args=tuple(
-            tuple(
-                zip(args_list, env_configs, baseline_configs,
-                    range(args.num_processes))
-            )
-        ),
-    )
-    '''
 
     return envs
 

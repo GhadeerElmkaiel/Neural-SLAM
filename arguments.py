@@ -5,13 +5,13 @@ import torch
 
 def get_args():
     parser = argparse.ArgumentParser(description='Active-Neural-SLAM')
-
+    
     ## General Arguments
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
-    parser.add_argument('--auto_gpu_config', type=int, default=1)
-    parser.add_argument('--total_num_scenes', type=str, default="auto")
-    parser.add_argument('-n', '--num_processes', type=int, default=4,
+    # parser.add_argument('--auto_gpu_config', type=int, default=0)
+    # parser.add_argument('--total_num_scenes', type=str, default="auto")
+    parser.add_argument('-n', '--num_processes', type=int, default=2,
                         help="""how many training processes to use (default:4)
                                 Overridden when auto_gpu_config=1
                                 and training on gpus """)
@@ -23,44 +23,45 @@ def get_args():
                         help='disables CUDA training')
     parser.add_argument('--eval', type=int, default=0,
                         help='1: evaluate models (default: 0)')
-    parser.add_argument('--train_global', type=int, default=1,
-                        help="""0: Do not train the Global Policy
-                                1: Train the Global Policy (default: 1)""")
-    parser.add_argument('--train_local', type=int, default=1,
-                        help="""0: Do not train the Local Policy
-                                1: Train the Local Policy (default: 1)""")
-    parser.add_argument('--train_slam', type=int, default=1,
-                        help="""0: Do not train the Neural SLAM Module
-                                1: Train the Neural SLAM Module (default: 1)""")
+    
+    # parser.add_argument('--train_global', type=int, default=1,
+    #                     help="""0: Do not train the Global Policy
+    #                             1: Train the Global Policy (default: 1)""")
+    # parser.add_argument('--train_local', type=int, default=1,
+    #                     help="""0: Do not train the Local Policy
+    #                             1: Train the Local Policy (default: 1)""")
+    # parser.add_argument('--train_slam', type=int, default=1,
+    #                     help="""0: Do not train the Neural SLAM Module
+    #                             1: Train the Neural SLAM Module (default: 1)""")
 
     # Logging, loading models, visualization
-    parser.add_argument('--log_interval', type=int, default=10,
-                        help="""log interval, one log per n updates
-                                (default: 10) """)
-    parser.add_argument('--save_interval', type=int, default=1,
-                        help="""save interval""")
-    parser.add_argument('-d', '--dump_location', type=str, default="./tmp/",
-                        help='path to dump models and log (default: ./tmp/)')
+    # parser.add_argument('--log_interval', type=int, default=10,
+    #                     help="""log interval, one log per n updates
+    #                             (default: 10) """)
+    # parser.add_argument('--save_interval', type=int, default=1,
+    #                     help="""save interval""")
+    parser.add_argument('-d', '--dump_location', type=str, default="./tmp",
+                        help='path to dump models and log (default: ./tmp)')
     parser.add_argument('--exp_name', type=str, default="exp1",
                         help='experiment name (default: exp1)')
-    parser.add_argument('--save_periodic', type=int, default=500000,
-                        help='Model save frequency in number of updates')
-    parser.add_argument('--load_slam', type=str, default="0",
-                        help="""model path to load,
-                                0 to not reload (default: 0)""")
-    parser.add_argument('--load_global', type=str, default="0",
-                        help="""model path to load,
-                                0 to not reload (default: 0)""")
-    parser.add_argument('--load_local', type=str, default="0",
-                        help="""model path to load,
-                                0 to not reload (default: 0)""")
+    # parser.add_argument('--save_periodic', type=int, default=500000,
+    #                     help='Model save frequency in number of updates')
+    # parser.add_argument('--load_slam', type=str, default="0",
+    #                     help="""model path to load,
+    #                             0 to not reload (default: 0)""")
+    # parser.add_argument('--load_global', type=str, default="0",
+    #                     help="""model path to load,
+    #                             0 to not reload (default: 0)""")
+    # parser.add_argument('--load_local', type=str, default="0",
+    #                     help="""model path to load,
+    #                             0 to not reload (default: 0)""")
     parser.add_argument('-v', '--visualize', type=int, default=0,
                         help='1:Render the frame (default: 0)')
-    parser.add_argument('--vis_type', type=int, default=1,
-                        help='1: Show predicted map, 2: Show GT map')
+    # parser.add_argument('--vis_type', type=int, default=1,
+    #                     help='1: Show predicted map, 2: Show GT map')
     parser.add_argument('--print_images', type=int, default=0,
                         help='1: save visualization as images')
-    parser.add_argument('--save_trajectory_data', type=str, default="0")
+    parser.add_argument('--save_trajectory_data', type=str, default="0")    
 
     # Environment, dataset and episode specifications
     parser.add_argument('-efw', '--env_frame_width', type=int, default=256,
@@ -82,12 +83,12 @@ def get_args():
                         help="path to config yaml containing task information")
                         '''
     parser.add_argument("--task_config", type=str,
-                        default="tasks/pointnav_mp3d.yaml",
+                        default="tasks/pointnav_test.yaml",
                         help="path to config yaml containing task information")
     parser.add_argument("--split", type=str, default="train",
                         help="dataset split (train | val | val_mini) ")
-    parser.add_argument('-na', '--noisy_actions', type=int, default=1)
-    parser.add_argument('-no', '--noisy_odometry', type=int, default=1)
+    # parser.add_argument('-na', '--noisy_actions', type=int, default=1)
+    # parser.add_argument('-no', '--noisy_odometry', type=int, default=1)
     parser.add_argument('--camera_height', type=float, default=1.25,
                         help="agent camera height in metres")
     parser.add_argument('--hfov', type=float, default=90.0,
@@ -145,19 +146,19 @@ def get_args():
                         help="use classical deterministic local policy")
 
     # Neural SLAM Module
-    parser.add_argument('-pe', '--use_pose_estimation', type=int, default=2)
-    parser.add_argument('--goals_size', type=int, default=2)
-    parser.add_argument('-pt', '--pretrained_resnet', type=int, default=1)
+    # parser.add_argument('-pe', '--use_pose_estimation', type=int, default=2)
+    # parser.add_argument('--goals_size', type=int, default=2)
+    # parser.add_argument('-pt', '--pretrained_resnet', type=int, default=1)
 
     parser.add_argument('--slam_optimizer', type=str, default='adam,lr=0.0001')
-    parser.add_argument('-sbs', '--slam_batch_size', type=int, default=72)
-    parser.add_argument('-sit', '--slam_iterations', type=int, default=10)
-    parser.add_argument('-sms', '--slam_memory_size', type=int, default=500000)
-    parser.add_argument('--proj_loss_coeff', type=float, default=1.0)
-    parser.add_argument('--pose_loss_coeff', type=float, default=10000.0)
-    parser.add_argument('--exp_loss_coeff', type=float, default=1.0)
-    parser.add_argument('--global_downscaling', type=int, default=2)
-    parser.add_argument('--map_pred_threshold', type=float, default=0.5)
+    # parser.add_argument('-sbs', '--slam_batch_size', type=int, default=72)
+    # parser.add_argument('-sit', '--slam_iterations', type=int, default=10)
+    # parser.add_argument('-sms', '--slam_memory_size', type=int, default=500000)
+    # parser.add_argument('--proj_loss_coeff', type=float, default=1.0)
+    # parser.add_argument('--pose_loss_coeff', type=float, default=10000.0)
+    # parser.add_argument('--exp_loss_coeff', type=float, default=1.0)
+    # parser.add_argument('--global_downscaling', type=int, default=2)
+    # parser.add_argument('--map_pred_threshold', type=float, default=0.5)
 
     parser.add_argument('--vision_range', type=int, default=64)
     parser.add_argument('--obstacle_boundary', type=int, default=5)
@@ -172,6 +173,7 @@ def get_args():
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
+    """
     if args.cuda:
         if args.auto_gpu_config:
             num_gpus = torch.cuda.device_count()
@@ -245,23 +247,26 @@ def get_args():
                                       args.num_processes_on_first_gpu))
             print("Number of processes per GPU: {}".format(
                                       args.num_processes_per_gpu))
+    """
+    
 
-    if args.eval == 1:
-        if args.train_global:
-            print("WARNING: Training Global Policy during evaluation")
-        if args.train_local:
-            print("WARNING: Training Local Policy during evaluation")
-        if args.train_slam:
-            print("WARNING: Training Neural SLAM module during evaluation")
 
-    assert args.short_goal_dist >= 1, "args.short_goal_dist >= 1"
+    # if args.eval == 1:
+    #     if args.train_global:
+    #         print("WARNING: Training Global Policy during evaluation")
+    #     if args.train_local:
+    #         print("WARNING: Training Local Policy during evaluation")
+    #     if args.train_slam:
+    #         print("WARNING: Training Neural SLAM module during evaluation")
 
-    if args.use_deterministic_local:
-        args.train_local = 0
+    # assert args.short_goal_dist >= 1, "args.short_goal_dist >= 1"
 
-    if args.num_mini_batch == "auto":
-        args.num_mini_batch = args.num_processes // 2
-    else:
-        args.num_mini_batch = int(args.num_mini_batch)
+    # if args.use_deterministic_local:
+    #     args.train_local = 0
+
+    # if args.num_mini_batch == "auto":
+    #     args.num_mini_batch = args.num_processes // 2
+    # else:
+    #     args.num_mini_batch = int(args.num_mini_batch)
 
     return args

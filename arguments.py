@@ -11,7 +11,7 @@ def get_args():
                         help='random seed (default: 1)')
     # parser.add_argument('--auto_gpu_config', type=int, default=0)
     # parser.add_argument('--total_num_scenes', type=str, default="auto")
-    parser.add_argument('-n', '--num_processes', type=int, default=2,
+    parser.add_argument('-n', '--num_processes', type=int, default=4,
                         help="""how many training processes to use (default:4)
                                 Overridden when auto_gpu_config=1
                                 and training on gpus """)
@@ -30,9 +30,9 @@ def get_args():
     # parser.add_argument('--train_local', type=int, default=1,
     #                     help="""0: Do not train the Local Policy
     #                             1: Train the Local Policy (default: 1)""")
-    # parser.add_argument('--train_slam', type=int, default=1,
-    #                     help="""0: Do not train the Neural SLAM Module
-    #                             1: Train the Neural SLAM Module (default: 1)""")
+    parser.add_argument('--train_slam', type=int, default=1,
+                        help="""0: Do not train the Neural SLAM Module
+                                1: Train the Neural SLAM Module (default: 1)""")
 
     # Logging, loading models, visualization
     # parser.add_argument('--log_interval', type=int, default=10,
@@ -46,9 +46,9 @@ def get_args():
                         help='experiment name (default: exp1)')
     # parser.add_argument('--save_periodic', type=int, default=500000,
     #                     help='Model save frequency in number of updates')
-    # parser.add_argument('--load_slam', type=str, default="0",
-    #                     help="""model path to load,
-    #                             0 to not reload (default: 0)""")
+    parser.add_argument('--load_slam', type=str, default="0",
+                        help="""model path to load,
+                                0 to not reload (default: 0)""")
     # parser.add_argument('--load_global', type=str, default="0",
     #                     help="""model path to load,
     #                             0 to not reload (default: 0)""")
@@ -83,12 +83,12 @@ def get_args():
                         help="path to config yaml containing task information")
                         '''
     parser.add_argument("--task_config", type=str,
-                        default="tasks/pointnav_test.yaml",
+                        default="tasks/pointnav_mp3d.yaml",
                         help="path to config yaml containing task information")
     parser.add_argument("--split", type=str, default="train",
                         help="dataset split (train | val | val_mini) ")
     # parser.add_argument('-na', '--noisy_actions', type=int, default=1)
-    # parser.add_argument('-no', '--noisy_odometry', type=int, default=1)
+    parser.add_argument('-no', '--noisy_odometry', type=int, default=1)
     parser.add_argument('--camera_height', type=float, default=1.25,
                         help="agent camera height in metres")
     parser.add_argument('--hfov', type=float, default=90.0,
@@ -146,18 +146,18 @@ def get_args():
                         help="use classical deterministic local policy")
 
     # Neural SLAM Module
-    # parser.add_argument('-pe', '--use_pose_estimation', type=int, default=2)
+    parser.add_argument('-pe', '--use_pose_estimation', type=int, default=2)
     # parser.add_argument('--goals_size', type=int, default=2)
-    # parser.add_argument('-pt', '--pretrained_resnet', type=int, default=1)
+    parser.add_argument('-pt', '--pretrained_resnet', type=int, default=1)
 
     parser.add_argument('--slam_optimizer', type=str, default='adam,lr=0.0001')
-    # parser.add_argument('-sbs', '--slam_batch_size', type=int, default=72)
-    # parser.add_argument('-sit', '--slam_iterations', type=int, default=10)
-    # parser.add_argument('-sms', '--slam_memory_size', type=int, default=500000)
-    # parser.add_argument('--proj_loss_coeff', type=float, default=1.0)
-    # parser.add_argument('--pose_loss_coeff', type=float, default=10000.0)
-    # parser.add_argument('--exp_loss_coeff', type=float, default=1.0)
-    # parser.add_argument('--global_downscaling', type=int, default=2)
+    parser.add_argument('-sbs', '--slam_batch_size', type=int, default=72)
+    parser.add_argument('-sit', '--slam_iterations', type=int, default=10)
+    parser.add_argument('-sms', '--slam_memory_size', type=int, default=500000)
+    parser.add_argument('--proj_loss_coeff', type=float, default=1.0)
+    parser.add_argument('--pose_loss_coeff', type=float, default=10000.0)
+    parser.add_argument('--exp_loss_coeff', type=float, default=1.0)
+    parser.add_argument('--global_downscaling', type=int, default=2)
     # parser.add_argument('--map_pred_threshold', type=float, default=0.5)
 
     parser.add_argument('--vision_range', type=int, default=64)

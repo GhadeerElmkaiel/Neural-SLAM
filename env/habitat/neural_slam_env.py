@@ -24,7 +24,9 @@ from env.utils.map_builder import MapBuilder
 import habitat
 from habitat import logger
 
+import env.habitat.utils.pose as pu
 from env.habitat.utils.supervision import HabitatMaps
+
 
 from model import get_grid
 
@@ -60,6 +62,13 @@ class Neural_SLAM_Env(habitat.RLEnv):
         self.dt = 10
         self.timestep = 0
 
+
+        self.sensor_noise_fwd = \
+                pickle.load(open("noise_models/sensor_noise_fwd.pkl", 'rb'))
+        self.sensor_noise_right = \
+                pickle.load(open("noise_models/sensor_noise_right.pkl", 'rb'))
+        self.sensor_noise_left = \
+                pickle.load(open("noise_models/sensor_noise_left.pkl", 'rb'))
 
         #TODO def noisy actions 
 
@@ -177,6 +186,127 @@ class Neural_SLAM_Env(habitat.RLEnv):
 
         self.save_position()
         return state, self.info
+
+    def step(self, action):
+        args = self.args
+        self.timestep += 1
+
+        #TODO
+        # Add noisy actions
+
+        self.last_loc = np.copy(self.curr_loc)
+        self.last_loc_gt = np.copy(self.curr_loc_gt)
+        self._previous_action = action
+
+        #TODO
+        # For noisy actions
+        '''
+        if args.noisy_actions:
+            obs, rew, done, info = super().step(noisy_action)
+        else:
+            obs, rew, done, info = super().step(action)
+        '''
+
+
+        obs, rew, done, info = super().step(action)
+        rgb = obs['rgb'].astype(np.uint8)
+        self.obs = rgb # For visualization
+        if self.args.frame_width != self.args.env_frame_width:
+            rgb = np.asarray(self.res(rgb))
+
+
+        state = rgb.transpose(2, 0, 1)
+
+        depth = _preprocess_depth(obs['depth'])
+
+        # Get base sensor and ground-truth pose
+        dx_gt, dy_gt, do_gt = self.get_gt_pose_change()
+        dx_base, dy_base, do_base = self.get_base_pose_change(
+                                        action, (dx_gt, dy_gt, do_gt))
+
+        self.curr_loc = pu.get_new_pose(self.curr_loc,
+                               (dx_base, dy_base, do_base))
+
+        self.curr_loc_gt = pu.get_new_pose(self.curr_loc_gt,
+                               (dx_gt, dy_gt, do_gt))
+
+        if not args.noisy_odometry:
+            self.curr_loc = self.curr_loc_gt
+            dx_base, dy_base, do_base = dx_gt, dy_gt, do_gt
+
+        # Convert pose to cm and degrees for mapper
+        mapper_gt_pose = (self.curr_loc_gt[0]*100.0,
+                          self.curr_loc_gt[1]*100.0,
+                          np.deg2rad(self.curr_loc_gt[2]))
+
+
+        # Update ground_truth map and explored area
+        fp_proj, self.map, fp_explored, self.explored_map = \
+                self.mapper.update_map(depth, mapper_gt_pose)
+
+
+        # Update collision map
+        if action == 1:
+            x1, y1, t1 = self.last_loc
+            x2, y2, t2 = self.curr_loc
+            if abs(x1 - x2)< 0.05 and abs(y1 - y2) < 0.05:
+                self.col_width += 2
+                self.col_width = min(self.col_width, 9)
+            else:
+                self.col_width = 1
+
+            dist = pu.get_l2_distance(x1, x2, y1, y2)
+            if dist < args.collision_threshold: #Collision
+                length = 2
+                width = self.col_width
+                buf = 3
+                for i in range(length):
+                    for j in range(width):
+                        wx = x1 + 0.05*((i+buf) * np.cos(np.deg2rad(t1)) + \
+                                        (j-width//2) * np.sin(np.deg2rad(t1)))
+                        wy = y1 + 0.05*((i+buf) * np.sin(np.deg2rad(t1)) - \
+                                        (j-width//2) * np.cos(np.deg2rad(t1)))
+                        r, c = wy, wx
+                        r, c = int(r*100/args.map_resolution), \
+                               int(c*100/args.map_resolution)
+                        [r, c] = pu.threshold_poses([r, c],
+                                    self.collison_map.shape)
+                        self.collison_map[r,c] = 1
+
+        # Set info
+        self.info['time'] = self.timestep
+        self.info['fp_proj'] = fp_proj
+        self.info['fp_explored']= fp_explored
+        self.info['sensor_pose'] = [dx_base, dy_base, do_base]
+        self.info['pose_err'] = [dx_gt - dx_base,
+                                 dy_gt - dy_base,
+                                 do_gt - do_base]
+
+        """
+        if self.timestep%args.num_local_steps==0:
+            area, ratio = self.get_global_reward()
+            self.info['exp_reward'] = area
+            self.info['exp_ratio'] = ratio
+        else:
+            self.info['exp_reward'] = None
+            self.info['exp_ratio'] = None
+        """
+
+        self.info['exp_reward'] = None
+        self.info['exp_ratio'] = None
+
+        self.save_position()
+
+        if self.info['time'] >= args.max_episode_length:
+            done = True
+            if self.args.save_trajectory_data != "0":
+                self.save_trajectory_data()
+        else:
+            done = False
+
+        return state, rew, done, self.info
+
+
     
     def get_sim_location(self):
         agent_state = super().habitat_env.sim.get_agent_state(0)
@@ -190,6 +320,32 @@ class Neural_SLAM_Env(habitat.RLEnv):
         if o > np.pi:
             o -= 2 * np.pi
         return x, y, o
+
+
+    def get_gt_pose_change(self):
+        curr_sim_pose = self.get_sim_location()
+        dx, dy, do = pu.get_rel_pose_change(curr_sim_pose, self.last_sim_location)
+        self.last_sim_location = curr_sim_pose
+        return dx, dy, do
+
+
+    def get_base_pose_change(self, action, gt_pose_change):
+        dx_gt, dy_gt, do_gt = gt_pose_change
+        if action == 1: ## Forward
+            x_err, y_err, o_err = self.sensor_noise_fwd.sample()[0][0]
+        elif action == 3: ## Right
+            x_err, y_err, o_err = self.sensor_noise_right.sample()[0][0]
+        elif action == 2: ## Left
+            x_err, y_err, o_err = self.sensor_noise_left.sample()[0][0]
+        else: ##Stop
+            x_err, y_err, o_err = 0., 0., 0.
+
+        x_err = x_err * self.args.noise_level
+        y_err = y_err * self.args.noise_level
+        o_err = o_err * self.args.noise_level
+        return dx_gt + x_err, dy_gt + y_err, do_gt + np.deg2rad(o_err)
+
+
 
 
     def build_mapper(self):

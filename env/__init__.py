@@ -41,9 +41,21 @@ class VecPyTorch():
 
     def step(self, actions):
         actions = actions.cpu().numpy()
-        obs, reward, done, info = self.venv.step(actions)
-        obs = torch.from_numpy(obs).float().to(self.device)
-        reward = torch.from_numpy(reward).float()
+        # obs, reward, done, info = self.venv.step(actions)
+        
+        obses = np.array(self.venv.step(actions))
+        shp = obses.shape
+        obs, reward, done, info = obses.ravel(order='F').reshape(shp[-1], shp[0])
+        # obs = np.array(obs).astype(np.float)
+        # reward = np.array(reward).astype(np.float)
+        # done = np.array(done).astype(np.uint8)
+
+        # obs = torch.from_numpy(obs).float().to(self.device)
+        # reward = torch.from_numpy(reward).float()
+        obs_ = np.array([o for o in obs]).astype(np.uint8)
+        reward_ = np.array([o for o in reward]).astype(np.uint8)
+        obs = torch.from_numpy(obs_).float().to(self.device)
+        reward = torch.from_numpy(reward_).float()
         return obs, reward, done, info
 
     def get_rewards(self, inputs):

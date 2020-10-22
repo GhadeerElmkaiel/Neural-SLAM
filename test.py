@@ -15,34 +15,39 @@ import PIL as Image
 import random
 
 from env import make_vec_envs
-# For test
-from env.habitat.neural_slam_env import Neural_SLAM_Env
-from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
-from habitat.config.default import get_config as cfg_env
-from env.habitat.habitat_lab.habitat.core.vector_env import VectorEnv
+
+from model import Neural_SLAM_Module
+from utils.optimization import get_optimizer
+from utils.storage import GlobalRolloutStorage, FIFOMemory
+
 
 from arguments import get_args
 
+
+args = get_args()
+
 ## ------------------- Testing Functions ------------------------
 
-def make_env_fn(args, config_env, rank):
-    dataset = PointNavDatasetV1(config_env.DATASET)
-    config_env.defrost()
-    config_env.SIMULATOR.SCENE = dataset.episodes[0].scene_id
-    print("Loading {}".format(config_env.SIMULATOR.SCENE))
-    config_env.freeze()
+args.num_processes = 2
+# args.split = 'val'
+args.train_slam = 0
+args.load_slam = 'pretrained_models/model_best.slam'
+args.map_size_cm = 5000
+args.task_config = 'tasks/pointnav_mp3d.yaml'
+args.seed = 5
 
-    env = Neural_SLAM_Env(args=args, rank=rank,
-                          config_env=config_env, dataset=dataset
-                          )
 
-    env.seed(rank)
-    return env
 
 ## --------------------------------------------------------------
 
 
-args = get_args()
+# Initializing random seeds
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+
+if args.cuda:
+    torch.cuda.manual_seed(args.seed)
+
 
 # config_path = "/home/ghadeer/Projects/Neural-SLAM/Neural-SLAM/configs/tasks/pointnav_test.yaml"
 config_path = "configs/tasks/pointnav_test.yaml"
@@ -79,6 +84,30 @@ def _preprocess_depth(depth):
     pass
 
 
+# Get boundaries of the local map
+def get_local_map_boundaries(agent_loc, local_sizes, full_sizes):
+    loc_r, loc_c = agent_loc
+    local_w, local_h = local_sizes
+    full_w, full_h = full_sizes
+
+    if args.global_downscaling > 1:
+        gx1, gy1 = loc_r - local_w // 2, loc_c - local_h // 2
+        gx2, gy2 = gx1 + local_w, gy1 + local_h
+        if gx1 < 0:
+            gx1, gx2 = 0, local_w
+        if gx2 > full_w:
+            gx1, gx2 = full_w - local_w, full_w
+
+        if gy1 < 0:
+            gy1, gy2 = 0, local_h
+        if gy2 > full_h:
+            gy1, gy2 = full_h - local_h, full_h
+    else:
+        gx1.gx2, gy1, gy2 = 0, full_w, 0, full_h
+
+    return [gx1, gx2, gy1, gy2]
+
+
 def _process_obs_for_display(obs):
     obs_np = obs.cpu().numpy()
     obs_ = []
@@ -110,35 +139,231 @@ def test():
     print("Dumping at {}".format(log_dir))
     logging.info(args)
 
+    # Defining variables
+    num_scenes = args.num_processes
+    num_episodes = int(args.num_episodes)
+
+
     # Starting environments
     torch.set_num_threads(1)
     envs = make_vec_envs(args)
     obs, infos = envs.reset()
-    obs_np = obs.cpu().numpy()
-    # envs = VectorEnv(
-    #     make_env_fn= make_env_fn,
-    #     env_fn_args= tuple(
-    #         tuple(
-    #             zip([args], [config_env], [0])
-    #         )
-    #     ),
-    # )
 
-    # my_env = Neural_SLAM_Env(args=args, rank=0,
-                        #   config_env=config_env, dataset=dataset
-                        #   )
-
-    # my_env.seed(0)
-    obs_all = _process_obs_for_display(obs)
     
-    # obs_1 = obs_1.reshape(128, 128, 3)
-    # obs_np = obs_np.reshape(shp[0], shp[-2], shp[-1], -1)
-    # cv2.imshow("First rgb", obs_np[0])
-    # cv2.imshow("Second rgb", obs_np[1])
-    plt.imshow(obs_all[0])
-    plt.show()
-    plt.imshow(obs_all[1])
-    plt.show()
+    # Initialize map variables
+    ### Full map consists of 4 channels containing the following:
+    ### 1. Obstacle Map
+    ### 2. Exploread Area
+    ### 3. Current Agent Location
+    ### 4. Past Agent Locations
+
+    torch.set_grad_enabled(False)
+
+    # Calculating full and local map sizes
+    map_size = args.map_size_cm // args.map_resolution
+    full_w, full_h = map_size, map_size
+    local_w, local_h = int(full_w / args.global_downscaling), \
+                       int(full_h / args.global_downscaling)
+
+    # Initializing full and local map
+    full_map = torch.zeros(num_scenes, 4, full_w, full_h).float().to(device)
+    local_map = torch.zeros(num_scenes, 4, local_w, local_h).float().to(device)
+
+    # Initial full and local pose
+    full_pose = torch.zeros(num_scenes, 3).float().to(device)
+    local_pose = torch.zeros(num_scenes, 3).float().to(device)
+
+    # Origin of local map
+    origins = np.zeros((num_scenes, 3))
+
+    # Local Map Boundaries
+    lmb = np.zeros((num_scenes, 4)).astype(int)
+
+    ### Planner pose inputs has 7 dimensions
+    ### 1-3 store continuous global agent location
+    ### 4-7 store local map boundaries
+    planner_pose_inputs = np.zeros((num_scenes, 7))
+
+    # Initialize full_map and full_pose
+    def init_map_and_pose():
+        full_map.fill_(0.)
+        full_pose.fill_(0.)
+        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0
+
+        locs = full_pose.cpu().numpy()
+        planner_pose_inputs[:, :3] = locs
+        for e in range(num_scenes):
+            r, c = locs[e, 1], locs[e, 0]
+            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                            int(c * 100.0 / args.map_resolution)]
+
+            full_map[e, 2:, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
+
+            lmb[e] = get_local_map_boundaries((loc_r, loc_c),
+                                              (local_w, local_h),
+                                              (full_w, full_h))
+
+            planner_pose_inputs[e, 3:] = lmb[e]
+            origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
+                          lmb[e][0] * args.map_resolution / 100.0, 0.]
+
+        for e in range(num_scenes):
+            local_map[e] = full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
+            local_pose[e] = full_pose[e] - \
+                            torch.from_numpy(origins[e]).to(device).float()
+
+    init_map_and_pose()
+
+    # slam
+    nslam_module = Neural_SLAM_Module(args).to(device)
+    slam_optimizer = get_optimizer(nslam_module.parameters(),
+                                   args.slam_optimizer)
+
+
+    '''
+    # Global policy
+    g_policy = RL_Policy(g_observation_space.shape, g_action_space,
+                         base_kwargs={'recurrent': args.use_recurrent_global,
+                                      'hidden_size': g_hidden_size,
+                                      'downscaling': args.global_downscaling
+                                      }).to(device)
+    g_agent = algo.PPO(g_policy, args.clip_param, args.ppo_epoch,
+                       args.num_mini_batch, args.value_loss_coef,
+                       args.entropy_coef, lr=args.global_lr, eps=args.eps,
+                       max_grad_norm=args.max_grad_norm)
+
+    # Local policy
+    l_policy = Local_IL_Policy(l_observation_space.shape, envs.action_space.n,
+                               recurrent=args.use_recurrent_local,
+                               hidden_size=l_hidden_size,
+                               deterministic=args.use_deterministic_local).to(device)
+    local_optimizer = get_optimizer(l_policy.parameters(),
+                                    args.local_optimizer)
+
+    # Storage
+    g_rollouts = GlobalRolloutStorage(args.num_global_steps,
+                                      num_scenes, g_observation_space.shape,
+                                      g_action_space, g_policy.rec_state_size,
+                                      1).to(device)
+    '''
+    
+    slam_memory = FIFOMemory(args.slam_memory_size)
+
+
+
+    # Loading model
+    if args.load_slam != "0":
+        print("Loading slam {}".format(args.load_slam))
+        state_dict = torch.load(args.load_slam,
+                                map_location=lambda storage, loc: storage)
+        nslam_module.load_state_dict(state_dict)
+
+    if not args.train_slam:
+        nslam_module.eval()
+        
+    '''
+    if args.load_global != "0":
+        print("Loading global {}".format(args.load_global))
+        state_dict = torch.load(args.load_global,
+                                map_location=lambda storage, loc: storage)
+        g_policy.load_state_dict(state_dict)
+
+    if not args.train_global:
+        g_policy.eval()
+
+    if args.load_local != "0":
+        print("Loading local {}".format(args.load_local))
+        state_dict = torch.load(args.load_local,
+                                map_location=lambda storage, loc: storage)
+        l_policy.load_state_dict(state_dict)
+
+    if not args.train_local:
+        l_policy.eval()
+    '''
+
+    # Predict map from frame 1:
+    poses = torch.from_numpy(np.asarray(
+        [infos[env_idx]['sensor_pose'] for env_idx
+         in range(num_scenes)])
+    ).float().to(device)
+
+    _, _, local_map[:, 0, :, :], local_map[:, 1, :, :], _, local_pose = \
+        nslam_module(obs, obs, poses, local_map[:, 0, :, :],
+                     local_map[:, 1, :, :], local_pose)
+
+    # Compute Global policy input
+    locs = local_pose.cpu().numpy()
+    
+    global_input = torch.zeros(num_scenes, 8, local_w, local_h)
+    global_orientation = torch.zeros(num_scenes, 1).long()
+    
+    for e in range(num_scenes):
+        r, c = locs[e, 1], locs[e, 0]
+        loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                        int(c * 100.0 / args.map_resolution)]
+
+        local_map[e, 2:, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
+        global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
+
+
+    imgs_1 = local_map[0, :, :, :].cpu().numpy()
+    imgs_2 = local_map[1, :, :, :].cpu().numpy()
+    
+    obs_all = _process_obs_for_display(obs)
+
+    # fig, axis = plt.subplots(1, 3)
+    # axis[0].imshow(obs_all[0])
+    # axis[1].imshow(imgs_1[0], cmap='gray')
+    # axis[2].imshow(imgs_1[1], cmap='gray')
+    cv2.imshow("Camer", transform_rgb_bgr(obs_all[0]))
+    cv2.imshow("Proj", imgs_1[0])
+    cv2.imshow("Map", imgs_1[1])
+
+
+    cv2.imshow("Camer2", transform_rgb_bgr(obs_all[1]))
+    cv2.imshow("Proj2", imgs_2[0])
+    cv2.imshow("Map2", imgs_2[1])
+
+    action = 1
+    while action!= 4:
+        k = cv2.waitKey(0)
+        if k == 119:
+            action = 1
+        elif k == 100:
+            action = 3
+        elif k == 97:
+            action = 2
+        elif k == 102:
+            action = 4
+            break
+        else:
+            action = 1
+
+        last_obs = obs.detach()
+
+        obs, rew, done, infos = envs.step(torch.from_numpy(np.array([action, action, action, action])))
+        
+        obs_all = _process_obs_for_display(obs)
+        cv2.imshow("Camer", transform_rgb_bgr(obs_all[0]))
+
+        poses = torch.from_numpy(np.asarray(
+            [infos[env_idx]['sensor_pose'] for env_idx
+                in range(num_scenes)])
+        ).float().to(device)
+
+        _, _, local_map[:, 0, :, :], local_map[:, 1, :, :], _, local_pose = \
+            nslam_module(last_obs, obs, poses, local_map[:, 0, :, :],
+                            local_map[:, 1, :, :], local_pose, build_maps=True)
+
+        imgs_1 = local_map[0, :, :, :].cpu().numpy()
+        cv2.imshow("Proj", imgs_1[0])
+        cv2.imshow("Map", imgs_1[1])
+
+
+
+
+    # plt.show()
+
     print("\n\nDone\n\n")
     input("Press Enter to finish")
     #my_env = Neural_SLAM_Env()

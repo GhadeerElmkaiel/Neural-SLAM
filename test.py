@@ -1,6 +1,8 @@
 
 import os
 
+from collections import deque
+
 import habitat
 import numpy as np
 import torch
@@ -8,6 +10,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 import logging
+import gym
+
 
 import cv2
 import matplotlib.pyplot as plt
@@ -33,7 +37,7 @@ args.num_processes = 2
 args.train_slam = 0
 args.load_slam = 'pretrained_models/model_best.slam'
 args.map_size_cm = 5000
-args.task_config = 'tasks/pointnav_mp3d.yaml'
+args.task_config = 'tasks/pointnav_test.yaml'
 args.seed = 5
 
 
@@ -139,9 +143,39 @@ def test():
     print("Dumping at {}".format(log_dir))
     logging.info(args)
 
-    # Defining variables
+    # Logging and loss variables
     num_scenes = args.num_processes
     num_episodes = int(args.num_episodes)
+    device = args.device = torch.device("cuda:0" if args.cuda else "cpu")
+    policy_loss = 0
+
+    best_cost = 100000
+    costs = deque(maxlen=1000)
+    exp_costs = deque(maxlen=1000)
+    pose_costs = deque(maxlen=1000)
+
+    g_masks = torch.ones(num_scenes).float().to(device)
+    l_masks = torch.zeros(num_scenes).float().to(device)
+
+    best_local_loss = np.inf
+    best_g_reward = -np.inf
+
+    if args.eval:
+        traj_lengths = args.max_episode_length // args.num_local_steps
+        explored_area_log = np.zeros((num_scenes, num_episodes, traj_lengths))
+        explored_ratio_log = np.zeros((num_scenes, num_episodes, traj_lengths))
+
+    g_episode_rewards = deque(maxlen=1000)
+
+    l_action_losses = deque(maxlen=1000)
+
+    g_value_losses = deque(maxlen=1000)
+    g_action_losses = deque(maxlen=1000)
+    g_dist_entropies = deque(maxlen=1000)
+
+    per_step_g_rewards = deque(maxlen=1000)
+
+    g_process_rewards = np.zeros((num_scenes))
 
 
     # Starting environments
@@ -214,6 +248,28 @@ def test():
 
     init_map_and_pose()
 
+    # Global policy observation space
+    g_observation_space = gym.spaces.Box(0, 1,
+                                         (8,
+                                          local_w,
+                                          local_h), dtype='uint8')
+
+    # Global policy action space
+    g_action_space = gym.spaces.Box(low=0.0, high=1.0,
+                                    shape=(2,), dtype=np.float32)
+
+    # Local policy observation space
+    l_observation_space = gym.spaces.Box(0, 255,
+                                         (3,
+                                          args.frame_width,
+                                          args.frame_width), dtype='uint8')
+
+    # Local and Global policy recurrent layer sizes
+    l_hidden_size = args.local_hidden_size
+    g_hidden_size = args.global_hidden_size
+
+    
+
     # slam
     nslam_module = Neural_SLAM_Module(args).to(device)
     slam_optimizer = get_optimizer(nslam_module.parameters(),
@@ -245,10 +301,10 @@ def test():
                                       num_scenes, g_observation_space.shape,
                                       g_action_space, g_policy.rec_state_size,
                                       1).to(device)
-    '''
+    
     
     slam_memory = FIFOMemory(args.slam_memory_size)
-
+    '''
 
 
     # Loading model
@@ -329,10 +385,13 @@ def test():
         k = cv2.waitKey(0)
         if k == 119:
             action = 1
+            action_2 = 1
         elif k == 100:
             action = 3
+            action_2 = 1
         elif k == 97:
             action = 2
+            action_2 = 2
         elif k == 102:
             action = 4
             break
@@ -341,10 +400,11 @@ def test():
 
         last_obs = obs.detach()
 
-        obs, rew, done, infos = envs.step(torch.from_numpy(np.array([action, action, action, action])))
+        obs, rew, done, infos = envs.step(torch.from_numpy(np.array([action, action_2])))
         
         obs_all = _process_obs_for_display(obs)
         cv2.imshow("Camer", transform_rgb_bgr(obs_all[0]))
+        cv2.imshow("Camer2", transform_rgb_bgr(obs_all[1]))
 
         poses = torch.from_numpy(np.asarray(
             [infos[env_idx]['sensor_pose'] for env_idx
@@ -356,8 +416,11 @@ def test():
                             local_map[:, 1, :, :], local_pose, build_maps=True)
 
         imgs_1 = local_map[0, :, :, :].cpu().numpy()
+        imgs_2 = local_map[1, :, :, :].cpu().numpy()
         cv2.imshow("Proj", imgs_1[0])
         cv2.imshow("Map", imgs_1[1])
+        cv2.imshow("Proj2", imgs_2[0])
+        cv2.imshow("Map2", imgs_2[1])
 
 
 
@@ -365,7 +428,7 @@ def test():
     # plt.show()
 
     print("\n\nDone\n\n")
-    input("Press Enter to finish")
+    # input("Press Enter to finish")
     #my_env = Neural_SLAM_Env()
 
 if __name__ == "__main__":

@@ -9,3 +9,7 @@ pointcloud on floor level ----(transform_camera_view)----> pointcloud with corre
 ----(transform_pose)----> agent in the bottom center of the image heading upward
 pointcloud ----(bin_points)----> 3D array with x, y values (one of multiple z values) (voxeling the space)
 
+
+
+#TODO
+I need to change the pointnav_test.config file (edit DATASET_PATH)

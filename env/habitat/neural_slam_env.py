@@ -24,7 +24,9 @@ from env.utils.map_builder import MapBuilder
 import habitat
 from habitat import logger
 
-import env.habitat.utils.pose as pu
+#import env
+from env.habitat.utils.pose import *
+#import habitat.utils.pose as pu
 from env.habitat.utils.supervision import HabitatMaps
 
 
@@ -224,10 +226,16 @@ class Neural_SLAM_Env(habitat.RLEnv):
         dx_base, dy_base, do_base = self.get_base_pose_change(
                                         action, (dx_gt, dy_gt, do_gt))
 
-        self.curr_loc = pu.get_new_pose(self.curr_loc,
+        # self.curr_loc = pu.get_new_pose(self.curr_loc,
+        #                        (dx_base, dy_base, do_base))
+
+        # self.curr_loc_gt = pu.get_new_pose(self.curr_loc_gt,
+        #                        (dx_gt, dy_gt, do_gt))
+
+        self.curr_loc = get_new_pose(self.curr_loc,
                                (dx_base, dy_base, do_base))
 
-        self.curr_loc_gt = pu.get_new_pose(self.curr_loc_gt,
+        self.curr_loc_gt = get_new_pose(self.curr_loc_gt,
                                (dx_gt, dy_gt, do_gt))
 
         if not args.noisy_odometry:
@@ -255,7 +263,8 @@ class Neural_SLAM_Env(habitat.RLEnv):
             else:
                 self.col_width = 1
 
-            dist = pu.get_l2_distance(x1, x2, y1, y2)
+            dist = get_l2_distance(x1, x2, y1, y2)
+            # dist = pu.get_l2_distance(x1, x2, y1, y2)
             if dist < args.collision_threshold: #Collision
                 length = 2
                 width = self.col_width
@@ -269,8 +278,10 @@ class Neural_SLAM_Env(habitat.RLEnv):
                         r, c = wy, wx
                         r, c = int(r*100/args.map_resolution), \
                                int(c*100/args.map_resolution)
-                        [r, c] = pu.threshold_poses([r, c],
+                        [r, c] = threshold_poses([r, c],
                                     self.collison_map.shape)
+                        # [r, c] = pu.threshold_poses([r, c],
+                        #             self.collison_map.shape)
                         self.collison_map[r,c] = 1
 
         # Set info
@@ -324,7 +335,8 @@ class Neural_SLAM_Env(habitat.RLEnv):
 
     def get_gt_pose_change(self):
         curr_sim_pose = self.get_sim_location()
-        dx, dy, do = pu.get_rel_pose_change(curr_sim_pose, self.last_sim_location)
+        dx, dy, do = get_rel_pose_change(curr_sim_pose, self.last_sim_location)
+        # dx, dy, do = pu.get_rel_pose_change(curr_sim_pose, self.last_sim_location)
         self.last_sim_location = curr_sim_pose
         return dx, dy, do
 

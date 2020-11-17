@@ -24,7 +24,6 @@ from env.utils.map_builder import MapBuilder
 import habitat
 from habitat import logger
 
-#import env
 from env.habitat.utils.pose import *
 #import habitat.utils.pose as pu
 from env.habitat.utils.supervision import HabitatMaps

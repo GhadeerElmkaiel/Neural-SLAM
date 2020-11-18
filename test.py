@@ -24,6 +24,7 @@ from model import Neural_SLAM_Module
 from utils.optimization import get_optimizer
 from utils.storage import GlobalRolloutStorage, FIFOMemory
 
+import pyrealsense2 as rs
 
 from arguments import get_args
 
@@ -124,6 +125,22 @@ def _process_obs_for_display(obs):
 
 
 def test():
+
+    ##########################################################
+    pipeline = rs.pipeline()
+    config = rs.config()
+    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    pipeline.start(config)
+
+    frames = pipeline.wait_for_frames()
+    color_frame = frames.get_color_frame()
+    img = np.asanyarray(color_frame.get_data())
+    img = cv2.resize(img, dsize=(256, 256), interpolation=cv2.INTER_CUBIC)
+    cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+    cv2.imshow('RealSense', img)
+    cv2.waitKey(1)
+    ##########################################################
 
     device = args.device = torch.device("cuda:0" if args.cuda else "cpu")
 

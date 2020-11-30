@@ -20,9 +20,11 @@ import random
 
 from env import make_vec_envs
 
-from model import Neural_SLAM_Module
+from model import RL_Policy, Local_IL_Policy, Neural_SLAM_Module
 from utils.optimization import get_optimizer
 from utils.storage import GlobalRolloutStorage, FIFOMemory
+
+import algo
 
 import pyrealsense2 as rs
 

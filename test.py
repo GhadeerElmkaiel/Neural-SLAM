@@ -134,6 +134,7 @@ def test():
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
     config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
     pipeline.start(config)
+    print("Taking image from RS camera")
 
     frames = pipeline.wait_for_frames()
     color_frame = frames.get_color_frame()

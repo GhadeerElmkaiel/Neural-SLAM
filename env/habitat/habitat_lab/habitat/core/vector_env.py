@@ -155,6 +155,8 @@ class VectorEnv:
         self.number_of_episodes = [
             read_fn() for read_fn in self._connection_read_fns
         ]
+        self.observation_space = self.observation_spaces[0]
+        self.action_space = self.action_spaces[0]
         self._paused = []
 
     @property

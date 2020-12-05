@@ -129,19 +129,20 @@ def _process_obs_for_display(obs):
 def test():
 
     ##########################################################
-    pipeline = rs.pipeline()
-    config = rs.config()
-    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-    pipeline.start(config)
+    # # Realsense test
+    # pipeline = rs.pipeline()
+    # config = rs.config()
+    # config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+    # config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    # pipeline.start(config)
 
-    frames = pipeline.wait_for_frames()
-    color_frame = frames.get_color_frame()
-    img = np.asanyarray(color_frame.get_data())
-    img = cv2.resize(img, dsize=(256, 256), interpolation=cv2.INTER_CUBIC)
-    cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
-    cv2.imshow('RealSense', img)
-    cv2.waitKey(1)
+    # frames = pipeline.wait_for_frames()
+    # color_frame = frames.get_color_frame()
+    # img = np.asanyarray(color_frame.get_data())
+    # img = cv2.resize(img, dsize=(256, 256), interpolation=cv2.INTER_CUBIC)
+    # cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
+    # cv2.imshow('RealSense', img)
+    # cv2.waitKey(1)
     ##########################################################
 
     device = args.device = torch.device("cuda:0" if args.cuda else "cpu")
@@ -295,7 +296,6 @@ def test():
                                    args.slam_optimizer)
 
 
-    '''
     # Global policy
     g_policy = RL_Policy(g_observation_space.shape, g_action_space,
                          base_kwargs={'recurrent': args.use_recurrent_global,
@@ -306,7 +306,7 @@ def test():
                        args.num_mini_batch, args.value_loss_coef,
                        args.entropy_coef, lr=args.global_lr, eps=args.eps,
                        max_grad_norm=args.max_grad_norm)
-
+    
     # Local policy
     l_policy = Local_IL_Policy(l_observation_space.shape, envs.action_space.n,
                                recurrent=args.use_recurrent_local,
@@ -323,6 +323,8 @@ def test():
     
     
     slam_memory = FIFOMemory(args.slam_memory_size)
+    '''
+
     '''
 
 

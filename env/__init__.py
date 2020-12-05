@@ -18,7 +18,7 @@ class VecPyTorch():
         self.venv = venv
         self.num_envs = venv.num_envs
         self.observation_space = venv.observation_spaces
-        self.action_space = venv.action_spaces
+        self.action_space = venv.action_space
         self.device = device
 
     def reset(self):

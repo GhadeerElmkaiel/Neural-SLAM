@@ -18,6 +18,7 @@ from torch.nn import functional as F
 from torchvision import transforms
 
 from env.utils.map_builder import MapBuilder
+from env.utils.fmm_planner import FMMPlanner
 
 # from env.habitat.utils.noisy_actions import CustomActionSpaceConfiguration
 
@@ -25,7 +26,7 @@ import habitat
 from habitat import logger
 
 from env.habitat.utils.pose import *
-import habitat.utils.pose as pu
+import env.habitat.utils.pose as pu
 import env.habitat.utils.visualizations as vu
 from env.habitat.utils.supervision import HabitatMaps
 
@@ -193,8 +194,19 @@ class Neural_SLAM_Env(habitat.RLEnv):
         args = self.args
         self.timestep += 1
 
+        action = action['action']
         #TODO
         # Add noisy actions
+        # Action remapping
+        if action == 2: # Forward
+            action = 1
+            # noisy_action = habitat.SimulatorActions.NOISY_FORWARD
+        elif action == 1: # Right
+            action = 3
+            # noisy_action = habitat.SimulatorActions.NOISY_RIGHT
+        elif action == 0: # Left
+            action = 2
+            # noisy_action = habitat.SimulatorActions.NOISY_LEFT
 
         self.last_loc = np.copy(self.curr_loc)
         self.last_loc_gt = np.copy(self.curr_loc_gt)
@@ -293,7 +305,7 @@ class Neural_SLAM_Env(habitat.RLEnv):
                                  dy_gt - dy_base,
                                  do_gt - do_base]
 
-        """
+        
         if self.timestep%args.num_local_steps==0:
             area, ratio = self.get_global_reward()
             self.info['exp_reward'] = area
@@ -301,10 +313,6 @@ class Neural_SLAM_Env(habitat.RLEnv):
         else:
             self.info['exp_reward'] = None
             self.info['exp_ratio'] = None
-        """
-
-        self.info['exp_reward'] = None
-        self.info['exp_ratio'] = None
 
         self.save_position()
 
@@ -318,7 +326,34 @@ class Neural_SLAM_Env(habitat.RLEnv):
         return state, rew, done, self.info
 
 
+
+    def seed(self, seed):
+        self.rng = np.random.RandomState(seed)
     
+    def get_spaces(self):
+        return self.observation_space, self.action_space
+
+    def build_mapper(self):
+        params = {}
+        params['frame_width'] = self.args.env_frame_width
+        params['frame_height'] = self.args.env_frame_height
+        params['fov'] =  self.args.hfov
+        params['resolution'] = self.args.map_resolution
+        params['map_size_cm'] = self.args.map_size_cm
+        params['agent_min_z'] = 25
+        params['agent_max_z'] = 150
+        params['agent_height'] = self.args.camera_height * 100
+        params['agent_view_angle'] = 0
+        params['du_scale'] = self.args.du_scale
+        params['vision_range'] = self.args.vision_range
+        params['visualize'] = self.args.visualize
+        params['obs_threshold'] = self.args.obs_threshold
+        self.selem = skimage.morphology.disk(self.args.obstacle_boundary /
+                                             self.args.map_resolution)
+        mapper = MapBuilder(params)
+        return mapper
+            
+
     def get_sim_location(self):
         agent_state = super().habitat_env.sim.get_agent_state(0)
         x = -agent_state.position[2]
@@ -357,34 +392,6 @@ class Neural_SLAM_Env(habitat.RLEnv):
         o_err = o_err * self.args.noise_level
         return dx_gt + x_err, dy_gt + y_err, do_gt + np.deg2rad(o_err)
 
-
-
-
-    def build_mapper(self):
-        params = {}
-        params['frame_width'] = self.args.env_frame_width
-        params['frame_height'] = self.args.env_frame_height
-        params['fov'] =  self.args.hfov
-        params['resolution'] = self.args.map_resolution
-        params['map_size_cm'] = self.args.map_size_cm
-        params['agent_min_z'] = 25
-        params['agent_max_z'] = 150
-        params['agent_height'] = self.args.camera_height * 100
-        params['agent_view_angle'] = 0
-        params['du_scale'] = self.args.du_scale
-        params['vision_range'] = self.args.vision_range
-        params['visualize'] = self.args.visualize
-        params['obs_threshold'] = self.args.obs_threshold
-        self.selem = skimage.morphology.disk(self.args.obstacle_boundary /
-                                             self.args.map_resolution)
-        mapper = MapBuilder(params)
-        return mapper
-
-    def seed(self, seed):
-        self.rng = np.random.RandomState(seed)
-    
-    def get_spaces(self):
-        return self.observation_space, self.action_space
 
     def get_short_term_goal(self, inputs):
 
@@ -646,6 +653,20 @@ class Neural_SLAM_Env(habitat.RLEnv):
         # This function is not used, Habitat-RLEnv requires this function
         return 0.
 
+    def get_global_reward(self):
+        curr_explored = self.explored_map*self.explorable_map
+        curr_explored_area = curr_explored.sum()
+
+        reward_scale = self.explorable_map.sum()
+        m_reward = (curr_explored_area - self.prev_explored_area)*1.
+        m_ratio = m_reward/reward_scale
+        m_reward = m_reward * 25./10000. # converting to m^2
+        self.prev_explored_area = curr_explored_area
+
+        m_reward *= 0.02 # Reward Scaling
+
+        return m_reward, m_ratio
+
     def get_done(self, observations):
         # This function is not used, Habitat-RLEnv requires this function
         return False
@@ -654,3 +675,146 @@ class Neural_SLAM_Env(habitat.RLEnv):
         # This function is not used, Habitat-RLEnv requires this function
         info = {}
         return info
+
+
+    def _get_stg(self, grid, explored, start, goal, planning_window):
+
+        [gx1, gx2, gy1, gy2] = planning_window
+
+        x1 = min(start[0], goal[0])
+        x2 = max(start[0], goal[0])
+        y1 = min(start[1], goal[1])
+        y2 = max(start[1], goal[1])
+        dist = pu.get_l2_distance(goal[0], start[0], goal[1], start[1])
+        buf = max(20., dist)
+        x1 = max(1, int(x1 - buf))
+        x2 = min(grid.shape[0]-1, int(x2 + buf))
+        y1 = max(1, int(y1 - buf))
+        y2 = min(grid.shape[1]-1, int(y2 + buf))
+
+        rows = explored.sum(1)
+        rows[rows>0] = 1
+        ex1 = np.argmax(rows)
+        ex2 = len(rows) - np.argmax(np.flip(rows))
+
+        cols = explored.sum(0)
+        cols[cols>0] = 1
+        ey1 = np.argmax(cols)
+        ey2 = len(cols) - np.argmax(np.flip(cols))
+
+        ex1 = min(int(start[0]) - 2, ex1)
+        ex2 = max(int(start[0]) + 2, ex2)
+        ey1 = min(int(start[1]) - 2, ey1)
+        ey2 = max(int(start[1]) + 2, ey2)
+
+        x1 = max(x1, ex1)
+        x2 = min(x2, ex2)
+        y1 = max(y1, ey1)
+        y2 = min(y2, ey2)
+
+        traversible = skimage.morphology.binary_dilation(
+                        grid[x1:x2, y1:y2],
+                        self.selem) != True
+        traversible[self.collison_map[gx1:gx2, gy1:gy2][x1:x2, y1:y2] == 1] = 0
+        traversible[self.visited[gx1:gx2, gy1:gy2][x1:x2, y1:y2] == 1] = 1
+
+        traversible[int(start[0]-x1)-1:int(start[0]-x1)+2,
+                    int(start[1]-y1)-1:int(start[1]-y1)+2] = 1
+
+        if goal[0]-2 > x1 and goal[0]+3 < x2\
+            and goal[1]-2 > y1 and goal[1]+3 < y2:
+            traversible[int(goal[0]-x1)-2:int(goal[0]-x1)+3,
+                    int(goal[1]-y1)-2:int(goal[1]-y1)+3] = 1
+        else:
+            goal[0] = min(max(x1, goal[0]), x2)
+            goal[1] = min(max(y1, goal[1]), y2)
+
+        def add_boundary(mat):
+            h, w = mat.shape
+            new_mat = np.ones((h+2,w+2))
+            new_mat[1:h+1,1:w+1] = mat
+            return new_mat
+
+        traversible = add_boundary(traversible)
+
+        planner = FMMPlanner(traversible, 360//self.dt)
+
+        reachable = planner.set_goal([goal[1]-y1+1, goal[0]-x1+1])
+
+        stg_x, stg_y = start[0] - x1 + 1, start[1] - y1 + 1
+        for i in range(self.args.short_goal_dist):
+            stg_x, stg_y, replan = planner.get_short_term_goal([stg_x, stg_y])
+        if replan:
+            stg_x, stg_y = start[0], start[1]
+        else:
+            stg_x, stg_y = stg_x + x1 - 1, stg_y + y1 - 1
+
+        return (stg_x, stg_y)
+
+
+    def _get_gt_action(self, grid, start, goal, planning_window, start_o):
+
+        [gx1, gx2, gy1, gy2] = planning_window
+
+        x1 = min(start[0], goal[0])
+        x2 = max(start[0], goal[0])
+        y1 = min(start[1], goal[1])
+        y2 = max(start[1], goal[1])
+        dist = pu.get_l2_distance(goal[0], start[0], goal[1], start[1])
+        buf = max(5., dist)
+        x1 = max(0, int(x1 - buf))
+        x2 = min(grid.shape[0], int(x2 + buf))
+        y1 = max(0, int(y1 - buf))
+        y2 = min(grid.shape[1], int(y2 + buf))
+
+        path_found = False
+        goal_r = 0
+        while not path_found:
+            traversible = skimage.morphology.binary_dilation(
+                            grid[gx1:gx2, gy1:gy2][x1:x2, y1:y2],
+                            self.selem) != True
+            traversible[self.visited[gx1:gx2, gy1:gy2][x1:x2, y1:y2] == 1] = 1
+            traversible[int(start[0]-x1)-1:int(start[0]-x1)+2,
+                        int(start[1]-y1)-1:int(start[1]-y1)+2] = 1
+            traversible[int(goal[0]-x1)-goal_r:int(goal[0]-x1)+goal_r+1,
+                        int(goal[1]-y1)-goal_r:int(goal[1]-y1)+goal_r+1] = 1
+            scale = 1
+            planner = FMMPlanner(traversible, 360//self.dt, scale)
+
+            reachable = planner.set_goal([goal[1]-y1, goal[0]-x1])
+
+            stg_x_gt, stg_y_gt = start[0] - x1, start[1] - y1
+            for i in range(1):
+                stg_x_gt, stg_y_gt, replan = \
+                        planner.get_short_term_goal([stg_x_gt, stg_y_gt])
+
+            if replan and buf < 100.:
+                buf = 2*buf
+                x1 = max(0, int(x1 - buf))
+                x2 = min(grid.shape[0], int(x2 + buf))
+                y1 = max(0, int(y1 - buf))
+                y2 = min(grid.shape[1], int(y2 + buf))
+            elif replan and goal_r < 50:
+                goal_r += 1
+            else:
+                path_found = True
+
+        stg_x_gt, stg_y_gt = stg_x_gt + x1, stg_y_gt + y1
+        angle_st_goal = math.degrees(math.atan2(stg_x_gt - start[0],
+                                                stg_y_gt - start[1]))
+        angle_agent = (start_o)%360.0
+        if angle_agent > 180:
+            angle_agent -= 360
+
+        relative_angle = (angle_agent - angle_st_goal)%360.0
+        if relative_angle > 180:
+            relative_angle -= 360
+
+        if relative_angle > 15.:
+            gt_action = 1
+        elif relative_angle < -15.:
+            gt_action = 0
+        else:
+            gt_action = 2
+
+        return gt_action

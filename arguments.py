@@ -10,7 +10,7 @@ def get_args():
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
     parser.add_argument('--auto_gpu_config', type=int, default=0)
-    # parser.add_argument('--total_num_scenes', type=str, default="auto")
+    parser.add_argument('--total_num_scenes', type=str, default="auto")
     parser.add_argument('-n', '--num_processes', type=int, default=4,
                         help="""how many training processes to use (default:4)
                                 Overridden when auto_gpu_config=1
@@ -146,7 +146,7 @@ def get_args():
 
     # Neural SLAM Module
     parser.add_argument('-pe', '--use_pose_estimation', type=int, default=2)
-    # parser.add_argument('--goals_size', type=int, default=2)
+    parser.add_argument('--goals_size', type=int, default=2)
     parser.add_argument('-pt', '--pretrained_resnet', type=int, default=1)
 
     parser.add_argument('--slam_optimizer', type=str, default='adam,lr=0.0001')
@@ -157,7 +157,7 @@ def get_args():
     parser.add_argument('--pose_loss_coeff', type=float, default=10000.0)
     parser.add_argument('--exp_loss_coeff', type=float, default=1.0)
     parser.add_argument('--global_downscaling', type=int, default=2)
-    # parser.add_argument('--map_pred_threshold', type=float, default=0.5)
+    parser.add_argument('--map_pred_threshold', type=float, default=0.5)
 
     parser.add_argument('--vision_range', type=int, default=64)
     parser.add_argument('--obstacle_boundary', type=int, default=5)

@@ -26,7 +26,7 @@ from utils.storage import GlobalRolloutStorage, FIFOMemory
 
 import algo
 
-import pyrealsense2 as rs
+# import pyrealsense2 as rs
 
 from arguments import get_args
 
@@ -38,8 +38,14 @@ args = get_args()
 args.num_processes = 2
 # args.split = 'val'
 args.train_slam = 0
+args.train_global = 0
+args.train_local = 0
 args.load_slam = 'pretrained_models/model_best.slam'
-args.map_size_cm = 5000
+# args.load_global = "0"
+# args.load_local = "0"
+args.load_global = 'pretrained_models/model_best.global'
+args.load_local = 'pretrained_models/model_best.local'
+args.map_size_cm = 2400
 args.task_config = 'tasks/pointnav_test.yaml'
 args.seed = 5
 
@@ -57,7 +63,7 @@ if args.cuda:
 
 
 # config_path = "/home/ghadeer/Projects/Neural-SLAM/Neural-SLAM/configs/tasks/pointnav_test.yaml"
-config_path = "configs/tasks/pointnav_test.yaml"
+# config_path = "configs/tasks/pointnav_test.yaml"
 
 # This function is for cv2 showing images
 def transform_rgb_bgr(image):
@@ -66,24 +72,24 @@ def transform_rgb_bgr(image):
 map_size_cm = 2400
 
 # Prepare parameters for the mapper "MapBuilder" object
-def build_mapper():
-    params = {}
-    params['frame_width'] = 256 #       self.args.env_frame_width
-    params['frame_height'] = 256 # s    elf.args.env_frame_height
-    params['fov'] = 90.0 #              self.args.hfov
-    params['resolution'] = 5 #          self.args.map_resolution
-    params['map_size_cm'] = map_size_cm #      self.args.map_size_cm
-    params['agent_min_z'] = 25
-    params['agent_max_z'] = 150
-    params['agent_height'] = 1.25 * 100 #     self.args.camera_height * 100
-    params['agent_view_angle'] = 0
-    params['du_scale'] = 2 #            self.args.du_scale
-    params['vision_range'] = 64 #       self.args.vision_range
-    params['visualize'] = 0 #           self.args.visualize
-    params['obs_threshold'] = 1 #       self.args.obs_threshold
+# def build_mapper():
+#     params = {}
+#     params['frame_width'] = 256 #       self.args.env_frame_width
+#     params['frame_height'] = 256 # s    elf.args.env_frame_height
+#     params['fov'] = 90.0 #              self.args.hfov
+#     params['resolution'] = 5 #          self.args.map_resolution
+#     params['map_size_cm'] = map_size_cm #      self.args.map_size_cm
+#     params['agent_min_z'] = 25
+#     params['agent_max_z'] = 150
+#     params['agent_height'] = 1.25 * 100 #     self.args.camera_height * 100
+#     params['agent_view_angle'] = 0
+#     params['du_scale'] = 2 #            self.args.du_scale
+#     params['vision_range'] = 64 #       self.args.vision_range
+#     params['visualize'] = 0 #           self.args.visualize
+#     params['obs_threshold'] = 1 #       self.args.obs_threshold
     
-    mapper = MapBuilder(params)
-    return mapper
+#     mapper = MapBuilder(params)
+#     return mapper
 
 
 # Function for processing the depth image befor using it
@@ -216,6 +222,7 @@ def test():
     # Calculating full and local map sizes
     map_size = args.map_size_cm // args.map_resolution
     full_w, full_h = map_size, map_size
+
     local_w, local_h = int(full_w / args.global_downscaling), \
                        int(full_h / args.global_downscaling)
 
@@ -233,8 +240,7 @@ def test():
     # Local Map Boundaries
     lmb = np.zeros((num_scenes, 4)).astype(int)
 
-    ### Planner pose inputs has 7 dimensions
-    ### 1-3 store continuous global agent location
+    ### Planner pose inputs The global agent location
     ### 4-7 store local map boundaries
     planner_pose_inputs = np.zeros((num_scenes, 7))
 
@@ -267,7 +273,6 @@ def test():
                             torch.from_numpy(origins[e]).to(device).float()
 
     init_map_and_pose()
-
     # Global policy observation space
     g_observation_space = gym.spaces.Box(0, 1,
                                          (8,
@@ -295,8 +300,10 @@ def test():
     slam_optimizer = get_optimizer(nslam_module.parameters(),
                                    args.slam_optimizer)
 
-
-    # Global policy
+    # Global policy 
+    # obse_space.shape= [8, 500, 500]
+    # act_space= Box shape (2,)
+    # g_hidden_size = 256
     g_policy = RL_Policy(g_observation_space.shape, g_action_space,
                          base_kwargs={'recurrent': args.use_recurrent_global,
                                       'hidden_size': g_hidden_size,
@@ -338,7 +345,7 @@ def test():
     if not args.train_slam:
         nslam_module.eval()
         
-    '''
+    
     if args.load_global != "0":
         print("Loading global {}".format(args.load_global))
         state_dict = torch.load(args.load_global,
@@ -356,7 +363,7 @@ def test():
 
     if not args.train_local:
         l_policy.eval()
-    '''
+    
 
     # Predict map from frame 1:
     poses = torch.from_numpy(np.asarray(
@@ -382,6 +389,47 @@ def test():
         local_map[e, 2:, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
 
+    global_input[:, 0:4, :, :] = local_map.detach()
+    global_input[:, 4:, :, :] = nn.MaxPool2d(args.global_downscaling)(full_map)
+
+    g_rollouts.obs[0].copy_(global_input)
+    g_rollouts.extras[0].copy_(global_orientation)
+
+    # Run Global Policy (global_goals = Long-Term Goal)
+    g_value, g_action, g_action_log_prob, g_rec_states = \
+        g_policy.act(
+            g_rollouts.obs[0],
+            g_rollouts.rec_states[0],
+            g_rollouts.masks[0],
+            extras=g_rollouts.extras[0],
+            deterministic=False
+        )
+
+    cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
+    global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
+                    for action in cpu_actions]
+
+    # Compute planner inputs
+    planner_inputs = [{} for e in range(num_scenes)]
+    for e, p_input in enumerate(planner_inputs):
+        p_input['goal'] = global_goals[e]
+        p_input['map_pred'] = global_input[e, 0, :, :].detach().cpu().numpy()
+        p_input['exp_pred'] = global_input[e, 1, :, :].detach().cpu().numpy()
+        p_input['pose_pred'] = planner_pose_inputs[e]
+
+    # Output stores local goals as well as the the ground-truth action
+    output = envs.get_short_term_goal(planner_inputs)
+
+    last_obs = obs.detach()
+    local_rec_states = torch.zeros(num_scenes, l_hidden_size).to(device)
+    start = time.time()
+
+    total_num_steps = -1
+    g_reward = 0
+
+    torch.set_grad_enabled(False)
+
+
 
     imgs_1 = local_map[0, :, :, :].cpu().numpy()
     imgs_2 = local_map[1, :, :, :].cpu().numpy()
@@ -392,6 +440,8 @@ def test():
     # axis[0].imshow(obs_all[0])
     # axis[1].imshow(imgs_1[0], cmap='gray')
     # axis[2].imshow(imgs_1[1], cmap='gray')
+    return
+
     cv2.imshow("Camer", transform_rgb_bgr(obs_all[0]))
     cv2.imshow("Proj", imgs_1[0])
     cv2.imshow("Map", imgs_1[1])

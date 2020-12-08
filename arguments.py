@@ -9,7 +9,7 @@ def get_args():
     ## General Arguments
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
-    # parser.add_argument('--auto_gpu_config', type=int, default=0)
+    parser.add_argument('--auto_gpu_config', type=int, default=0)
     # parser.add_argument('--total_num_scenes', type=str, default="auto")
     parser.add_argument('-n', '--num_processes', type=int, default=4,
                         help="""how many training processes to use (default:4)
@@ -23,42 +23,41 @@ def get_args():
                         help='disables CUDA training')
     parser.add_argument('--eval', type=int, default=0,
                         help='1: evaluate models (default: 0)')
-    
-    # parser.add_argument('--train_global', type=int, default=1,
-    #                     help="""0: Do not train the Global Policy
-    #                             1: Train the Global Policy (default: 1)""")
-    # parser.add_argument('--train_local', type=int, default=1,
-    #                     help="""0: Do not train the Local Policy
-    #                             1: Train the Local Policy (default: 1)""")
+    parser.add_argument('--train_global', type=int, default=1,
+                        help="""0: Do not train the Global Policy
+                                1: Train the Global Policy (default: 1)""")
+    parser.add_argument('--train_local', type=int, default=1,
+                        help="""0: Do not train the Local Policy
+                                1: Train the Local Policy (default: 1)""")
     parser.add_argument('--train_slam', type=int, default=1,
                         help="""0: Do not train the Neural SLAM Module
                                 1: Train the Neural SLAM Module (default: 1)""")
 
     # Logging, loading models, visualization
-    # parser.add_argument('--log_interval', type=int, default=10,
-    #                     help="""log interval, one log per n updates
-    #                             (default: 10) """)
-    # parser.add_argument('--save_interval', type=int, default=1,
-    #                     help="""save interval""")
+    parser.add_argument('--log_interval', type=int, default=10,
+                        help="""log interval, one log per n updates
+                                (default: 10) """)
+    parser.add_argument('--save_interval', type=int, default=1,
+                        help="""save interval""")
     parser.add_argument('-d', '--dump_location', type=str, default="./tmp",
                         help='path to dump models and log (default: ./tmp)')
     parser.add_argument('--exp_name', type=str, default="exp1",
                         help='experiment name (default: exp1)')
-    # parser.add_argument('--save_periodic', type=int, default=500000,
-    #                     help='Model save frequency in number of updates')
+    parser.add_argument('--save_periodic', type=int, default=500000,
+                        help='Model save frequency in number of updates')
     parser.add_argument('--load_slam', type=str, default="0",
                         help="""model path to load,
                                 0 to not reload (default: 0)""")
-    # parser.add_argument('--load_global', type=str, default="0",
-    #                     help="""model path to load,
-    #                             0 to not reload (default: 0)""")
-    # parser.add_argument('--load_local', type=str, default="0",
-    #                     help="""model path to load,
-    #                             0 to not reload (default: 0)""")
+    parser.add_argument('--load_global', type=str, default="0",
+                        help="""model path to load,
+                                0 to not reload (default: 0)""")
+    parser.add_argument('--load_local', type=str, default="0",
+                        help="""model path to load,
+                                0 to not reload (default: 0)""")
     parser.add_argument('-v', '--visualize', type=int, default=0,
                         help='1:Render the frame (default: 0)')
-    # parser.add_argument('--vis_type', type=int, default=1,
-    #                     help='1: Show predicted map, 2: Show GT map')
+    parser.add_argument('--vis_type', type=int, default=1,
+                        help='1: Show predicted map, 2: Show GT map')
     parser.add_argument('--print_images', type=int, default=0,
                         help='1: save visualization as images')
     parser.add_argument('--save_trajectory_data', type=str, default="0")    
@@ -87,7 +86,7 @@ def get_args():
                         help="path to config yaml containing task information")
     parser.add_argument("--split", type=str, default="train",
                         help="dataset split (train | val | val_mini) ")
-    # parser.add_argument('-na', '--noisy_actions', type=int, default=1)
+    parser.add_argument('-na', '--noisy_actions', type=int, default=1)
     parser.add_argument('-no', '--noisy_odometry', type=int, default=1)
     parser.add_argument('--camera_height', type=float, default=1.25,
                         help="agent camera height in metres")
@@ -173,11 +172,13 @@ def get_args():
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-    """
+    
     if args.cuda:
         if args.auto_gpu_config:
             num_gpus = torch.cuda.device_count()
+            	    
             '''
+
             if args.total_num_scenes != "auto":
                 args.total_num_scenes = int(args.total_num_scenes)
             elif "gibson" in args.task_config and \
@@ -189,6 +190,7 @@ def get_args():
             elif "gibson" in args.task_config and \
                     "val" in args.split:
                 args.total_num_scenes = 1
+                
             '''
 
             if args.total_num_scenes != "auto":
@@ -206,6 +208,7 @@ def get_args():
                 assert False, "Unknown task config, please specify" + \
                         " total_num_scenes"
 
+	    
             # Automatically configure number of training threads based on
             # number of GPUs available and GPU memory size
             total_num_scenes = args.total_num_scenes
@@ -247,7 +250,7 @@ def get_args():
                                       args.num_processes_on_first_gpu))
             print("Number of processes per GPU: {}".format(
                                       args.num_processes_per_gpu))
-    """
+    
     
 
 

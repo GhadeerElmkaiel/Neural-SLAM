@@ -25,7 +25,8 @@ import habitat
 from habitat import logger
 
 from env.habitat.utils.pose import *
-#import habitat.utils.pose as pu
+import habitat.utils.pose as pu
+import env.habitat.utils.visualizations as vu
 from env.habitat.utils.supervision import HabitatMaps
 
 
@@ -59,7 +60,7 @@ class Neural_SLAM_Env(habitat.RLEnv):
                                                 num="Thread {}".format(rank))
         self.args = args
         self.rank = rank
-        self.num_actions = 4    # number of ations (3) In Active Neural SLAM
+        self.num_actions = 3    # number of ations (3) In Active Neural SLAM
         self.dt = 10
         self.timestep = 0
 
@@ -385,6 +386,178 @@ class Neural_SLAM_Env(habitat.RLEnv):
     def get_spaces(self):
         return self.observation_space, self.action_space
 
+    def get_short_term_goal(self, inputs):
+
+        args = self.args
+
+        # Get Map prediction
+        map_pred = inputs['map_pred']
+        exp_pred = inputs['exp_pred']
+
+        grid = np.rint(map_pred)
+        explored = np.rint(exp_pred)
+
+        # Get pose prediction and global policy planning window
+        start_x, start_y, start_o, gx1, gx2, gy1, gy2 = inputs['pose_pred']
+        gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
+        planning_window = [gx1, gx2, gy1, gy2]
+
+        # Get last loc
+        last_start_x, last_start_y = self.last_loc[0], self.last_loc[1]
+        r, c = last_start_y, last_start_x
+        last_start = [int(r * 100.0/args.map_resolution - gx1),
+                      int(c * 100.0/args.map_resolution - gy1)]
+        last_start = pu.threshold_poses(last_start, grid.shape)
+
+        # Get curr loc
+        self.curr_loc = [start_x, start_y, start_o]
+        r, c = start_y, start_x
+        start = [int(r * 100.0/args.map_resolution - gx1),
+                 int(c * 100.0/args.map_resolution - gy1)]
+        start = pu.threshold_poses(start, grid.shape)
+        #TODO: try reducing this
+
+        self.visited[gx1:gx2, gy1:gy2][start[0]-2:start[0]+3,
+                                       start[1]-2:start[1]+3] = 1
+
+        steps = 25
+        for i in range(steps):
+            x = int(last_start[0] + (start[0] - last_start[0]) * (i+1) / steps)
+            y = int(last_start[1] + (start[1] - last_start[1]) * (i+1) / steps)
+            self.visited_vis[gx1:gx2, gy1:gy2][x, y] = 1
+
+        # Get last loc ground truth pose
+        last_start_x, last_start_y = self.last_loc_gt[0], self.last_loc_gt[1]
+        r, c = last_start_y, last_start_x
+        last_start = [int(r * 100.0/args.map_resolution),
+                      int(c * 100.0/args.map_resolution)]
+        last_start = pu.threshold_poses(last_start, self.visited_gt.shape)
+
+        # Get ground truth pose
+        start_x_gt, start_y_gt, start_o_gt = self.curr_loc_gt
+        r, c = start_y_gt, start_x_gt
+        start_gt = [int(r * 100.0/args.map_resolution),
+                    int(c * 100.0/args.map_resolution)]
+        start_gt = pu.threshold_poses(start_gt, self.visited_gt.shape)
+        #self.visited_gt[start_gt[0], start_gt[1]] = 1
+
+        steps = 25
+        for i in range(steps):
+            x = int(last_start[0] + (start_gt[0] - last_start[0]) * (i+1) / steps)
+            y = int(last_start[1] + (start_gt[1] - last_start[1]) * (i+1) / steps)
+            self.visited_gt[x, y] = 1
+
+
+        # Get goal
+        goal = inputs['goal']
+        goal = pu.threshold_poses(goal, grid.shape)
+
+
+        # Get intrinsic reward for global policy
+        # Negative reward for exploring explored areas i.e.
+        # for choosing explored cell as long-term goal
+        self.extrinsic_rew = -pu.get_l2_distance(10, goal[0], 10, goal[1])
+        self.intrinsic_rew = -exp_pred[goal[0], goal[1]]
+
+        # Get short-term goal
+        stg = self._get_stg(grid, explored, start, np.copy(goal), planning_window)
+
+        # Find GT action
+        if self.args.eval or not self.args.train_local:
+            gt_action = 0
+        else:
+            gt_action = self._get_gt_action(1 - self.explorable_map, start,
+                                            [int(stg[0]), int(stg[1])],
+                                            planning_window, start_o)
+
+        (stg_x, stg_y) = stg
+        relative_dist = pu.get_l2_distance(stg_x, start[0], stg_y, start[1])
+        relative_dist = relative_dist*5./100.
+        angle_st_goal = math.degrees(math.atan2(stg_x - start[0],
+                                                stg_y - start[1]))
+        angle_agent = (start_o)%360.0
+        if angle_agent > 180:
+            angle_agent -= 360
+
+        relative_angle = (angle_agent - angle_st_goal)%360.0
+        if relative_angle > 180:
+            relative_angle -= 360
+
+        def discretize(dist):
+            dist_limits = [0.25, 3, 10]
+            dist_bin_size = [0.05, 0.25, 1.]
+            if dist < dist_limits[0]:
+                ddist = int(dist/dist_bin_size[0])
+            elif dist < dist_limits[1]:
+                ddist = int((dist - dist_limits[0])/dist_bin_size[1]) + \
+                    int(dist_limits[0]/dist_bin_size[0])
+            elif dist < dist_limits[2]:
+                ddist = int((dist - dist_limits[1])/dist_bin_size[2]) + \
+                    int(dist_limits[0]/dist_bin_size[0]) + \
+                    int((dist_limits[1] - dist_limits[0])/dist_bin_size[1])
+            else:
+                ddist = int(dist_limits[0]/dist_bin_size[0]) + \
+                    int((dist_limits[1] - dist_limits[0])/dist_bin_size[1]) + \
+                    int((dist_limits[2] - dist_limits[1])/dist_bin_size[2])
+            return ddist
+
+        output = np.zeros((args.goals_size + 1))
+
+        output[0] = int((relative_angle%360.)/5.)
+        output[1] = discretize(relative_dist)
+        output[2] = gt_action
+
+        self.relative_angle = relative_angle
+
+        if args.visualize or args.print_images:
+            dump_dir = "{}/dump/{}/".format(args.dump_location,
+                                                args.exp_name)
+            ep_dir = '{}/episodes/{}/{}/'.format(
+                            dump_dir, self.rank+1, self.episode_no)
+            if not os.path.exists(ep_dir):
+                os.makedirs(ep_dir)
+
+            if args.vis_type == 1: # Visualize predicted map and pose
+                vis_grid = vu.get_colored_map(np.rint(map_pred),
+                                self.collison_map[gx1:gx2, gy1:gy2],
+                                self.visited_vis[gx1:gx2, gy1:gy2],
+                                self.visited_gt[gx1:gx2, gy1:gy2],
+                                goal,
+                                self.explored_map[gx1:gx2, gy1:gy2],
+                                self.explorable_map[gx1:gx2, gy1:gy2],
+                                self.map[gx1:gx2, gy1:gy2] *
+                                    self.explored_map[gx1:gx2, gy1:gy2])
+                vis_grid = np.flipud(vis_grid)
+                vu.visualize(self.figure, self.ax, self.obs, vis_grid[:,:,::-1],
+                            (start_x - gy1*args.map_resolution/100.0,
+                             start_y - gx1*args.map_resolution/100.0,
+                             start_o),
+                            (start_x_gt - gy1*args.map_resolution/100.0,
+                             start_y_gt - gx1*args.map_resolution/100.0,
+                             start_o_gt),
+                            dump_dir, self.rank, self.episode_no,
+                            self.timestep, args.visualize,
+                            args.print_images, args.vis_type)
+
+            else: # Visualize ground-truth map and pose
+                vis_grid = vu.get_colored_map(self.map,
+                                self.collison_map,
+                                self.visited_gt,
+                                self.visited_gt,
+                                (goal[0]+gx1, goal[1]+gy1),
+                                self.explored_map,
+                                self.explorable_map,
+                                self.map*self.explored_map)
+                vis_grid = np.flipud(vis_grid)
+                vu.visualize(self.figure, self.ax, self.obs, vis_grid[:,:,::-1],
+                            (start_x_gt, start_y_gt, start_o_gt),
+                            (start_x_gt, start_y_gt, start_o_gt),
+                            dump_dir, self.rank, self.episode_no,
+                            self.timestep, args.visualize,
+                            args.print_images, args.vis_type)
+
+        return output
+
     # Get Map from Simulator
     def _get_gt_map(self, full_map_size):
         self.scene_name = self.habitat_env.sim.config.sim_cfg.scene.id #SCENE
@@ -439,8 +612,8 @@ class Neural_SLAM_Env(habitat.RLEnv):
 
         grid_map = torch.from_numpy(grid_map).float()
         grid_map = grid_map.unsqueeze(0).unsqueeze(0)
-        translated = F.grid_sample(grid_map, trans_mat)
-        rotated = F.grid_sample(translated, rot_mat)
+        translated = F.grid_sample(grid_map, trans_mat, align_corners=True)
+        rotated = F.grid_sample(translated, rot_mat, align_corners=True)
 
         episode_map = torch.zeros((full_map_size, full_map_size)).float()
         if full_map_size > grid_size:

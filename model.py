@@ -15,8 +15,8 @@ class Global_Policy(NNBase):
                  downscaling=1):
         super(Global_Policy, self).__init__(recurrent, hidden_size,
                                             hidden_size)
-
-        out_size = int(input_shape[1] / 16. * input_shape[2] / 16.)
+        # out_size = int(input_shape[1] / 16. * input_shape[2] / 16.)
+        out_size = int(input_shape[1] / 16.) * int(input_shape[2] / 16.)
 
         self.main = nn.Sequential(
             nn.MaxPool2d(2),
@@ -212,8 +212,8 @@ class Neural_SLAM_Module(nn.Module):
 
             grid_map.fill_(0.)
             grid_map[:, :, vr:, int(vr / 2):int(vr / 2 + vr)] = pred_last
-            translated = F.grid_sample(grid_map, trans_mat)
-            rotated = F.grid_sample(translated, rot_mat)
+            translated = F.grid_sample(grid_map, trans_mat, align_corners=True)
+            rotated = F.grid_sample(translated, rot_mat, align_corners=True)
             rotated = rotated[:, :, vr:, int(vr / 2):int(vr / 2 + vr)]
 
             pred_last_st = rotated
@@ -288,8 +288,8 @@ class Neural_SLAM_Module(nn.Module):
                 rot_mat, trans_mat = get_grid(st_pose, agent_view.size(),
                                               self.device)
 
-                rotated = F.grid_sample(agent_view, rot_mat)
-                translated = F.grid_sample(rotated, trans_mat)
+                rotated = F.grid_sample(agent_view, rot_mat, align_corners=True)
+                translated = F.grid_sample(rotated, trans_mat, align_corners=True)
 
                 maps2 = torch.cat((maps.unsqueeze(1),
                                    translated[:, :1, :, :]), 1)
@@ -424,7 +424,6 @@ class RL_Policy(nn.Module):
             return self.network(inputs, rnn_hxs, masks, extras)
 
     def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
-
         value, actor_features, rnn_hxs = self(inputs, rnn_hxs, masks, extras)
         dist = self.dist(actor_features)
 

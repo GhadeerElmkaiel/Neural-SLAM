@@ -52,6 +52,7 @@ EPISODE_COMMAND = "current_episode"
 COUNT_EPISODES_COMMAND = "count_episodes"
 EPISODE_OVER = "episode_over"
 GET_METRICS = "get_metrics"
+GET_SHORT_TERM_GOAL = "get_short_term_goal"
 
 
 def _make_env_fn(
@@ -242,6 +243,10 @@ class VectorEnv:
                 elif command == GET_METRICS:
                     result = env.get_metrics()
                     connection_write_fn(result)
+
+                elif command == GET_SHORT_TERM_GOAL:
+                    output = env.get_short_term_goal(data)
+                    connection_write_fn(output)
 
                 else:
                     raise NotImplementedError
@@ -522,6 +527,20 @@ class VectorEnv:
             return tile
         else:
             raise NotImplementedError
+
+    def get_short_term_goal(self, inputs):
+        self._assert_not_closed()
+        self._is_waiting = True
+        for e, write_fn in enumerate(self._connection_write_fns):
+            write_fn((GET_SHORT_TERM_GOAL, inputs[e]))
+        results = []
+        for read_fn in self._connection_read_fns:
+            results.append(read_fn())
+        self._is_waiting = False
+        return np.stack(results)
+
+    def _assert_not_closed(self):
+        assert not self._is_closed, "Trying to operate on a SubprocVecEnv after calling close()"
 
     @property
     def _valid_start_methods(self) -> Set[str]:

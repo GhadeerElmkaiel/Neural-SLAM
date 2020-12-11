@@ -57,8 +57,8 @@ args.task_config = 'tasks/pointnav_mp3d.yaml'
 args.split = 'val_mini'
 # args.task_config = 'tasks/pointnav_test.yaml'
 args.seed = 1
-# args.num_episodes = 1
-# args.max_episode_length = 20
+args.num_episodes = 1
+args.max_episode_length =11
 
 ## --------------------------------------------------------------
 
@@ -218,7 +218,7 @@ def test():
     envs = make_vec_envs(args)
     obs, infos = envs.reset()
 
-    
+
     # Initialize map variables
     ### Full map consists of 4 channels containing the following:
     ### 1. Obstacle Map
@@ -374,6 +374,52 @@ def test():
         l_policy.eval()
     
 
+
+    # /////////////////////////////////////////////////////////////// TESTING
+    from matplotlib import image
+    test_images = {}
+    for i in range(5):
+        for j in range(12):
+            img_pth = 'imgs/robots_rs/test_{}_{}.jpg'.format(i+1, j)
+            img = image.imread(img_pth)
+            test_images[(i+1, j)] = np.array(img)
+
+    poses_array = []
+    for i in range(8):
+        poses_array.append(np.array([[0.3, 0.0, 0.0], [0.3, 0.0, 0.0]]))
+    for i in range(4):
+        poses_array.append(np.array([[0.0, 0.0, -0.24587], [0.0, 0.0, -0.27587]]))
+    
+    test_1_idx = 3
+    test_2_idx = 1
+    # image1_1 = image.imread('imgs/robots_rs/img_128_6.jpg')
+    # image1_2 = image.imread('imgs/robots_rs/img_128_7.jpg')
+    # image1_3 = image.imread('imgs/robots_rs/img_128_8.jpg')
+    # image2_1 = image.imread('imgs/robots_rs/img_128_30.jpg')
+    # image2_2 = image.imread('imgs/robots_rs/img_128_31.jpg')
+    # image2_3 = image.imread('imgs/robots_rs/img_128_32.jpg')
+    # # image_data = np.asarray(image)
+    # # plt.imshow(image)
+    # # plt.show()
+    # image_data_1_1 = np.array(image1_1)
+    # image_data_1_2 = np.array(image1_2)
+    # image_data_1_3 = np.array(image1_3)
+    # image_data_2_1 = np.array(image2_1)
+    # image_data_2_2 = np.array(image2_2)
+    # image_data_2_3 = np.array(image2_3)
+    # image_data_1_all = np.array([image_data_1_1, image_data_2_1])
+    # image_data_2_all = np.array([image_data_1_2, image_data_2_2])
+    # image_data_3_all = np.array([image_data_1_3, image_data_2_3])
+    image_data_all = np.array([test_images[(test_1_idx, 0)], test_images[(test_2_idx, 0)]])
+    obs = torch.from_numpy(image_data_all).float().to(device)
+    obs = obs.permute((0, 3, 1, 2)).contiguous()
+
+    # print(f"New obs: {obs}")
+    print(f"New obs size: {obs.size()}")
+    # /////////////////////////////////////////////////////////////// TESTING
+
+
+
     # Predict map from frame 1:
     poses = torch.from_numpy(np.asarray(
         [infos[env_idx]['sensor_pose'] for env_idx
@@ -488,7 +534,7 @@ def test():
             # Env step
             obs, rew, done, infos = envs.step(l_action)
 
-            # //////////////////////////////////////////////////////////////////
+            # ////////////////////////////////////////////////////////////////// TESTING
             # obs_all = _process_obs_for_display(obs)
             # _ims = [transform_rgb_bgr(obs_all[0]), transform_rgb_bgr(obs_all[1])]
 
@@ -497,7 +543,7 @@ def test():
             # plt.savefig(f"imgs/img_0_{step}.png")
             # # plt.clf()
 
-            # //////////////////////////////////////////////////////////////////
+            # ////////////////////////////////////////////////////////////////// TESTING
 
             l_masks = torch.FloatTensor([0 if x else 1
                                          for x in done]).to(device)
@@ -539,15 +585,60 @@ def test():
                  in range(num_scenes)])
             ).float().to(device)
 
-            # print(f"\n last_obs : {last_obs}\n")
-            # print(f"\n obs : {obs}\n")
+            
 
-                
+
+            # ///////////////////////////////////////////////////////////////// TESTING            
             # obs = torch.from_numpy(obs_).float().to(self.device)
-            obs_cpu = obs.detach().cpu().numpy()
-            last_obs_cpu = last_obs.detach().cpu().numpy()
-            print(f"obs shape: {obs_cpu.shape}")
-            print(f"last_obs shape: {last_obs_cpu.shape}")
+            # obs_cpu = obs.detach().cpu().numpy()
+            # last_obs_cpu = last_obs.detach().cpu().numpy()
+            # print(f"obs shape: {obs_cpu.shape}")
+            # print(f"last_obs shape: {last_obs_cpu.shape}")
+            original_obs = obs
+            original_last_obs = last_obs
+            original_poses = poses
+
+            print(f"step: {step}")
+            last_obs = torch.from_numpy(image_data_all).float().to(device)
+            last_obs = last_obs.permute((0, 3, 1, 2)).contiguous()
+            image_data_all = np.array([test_images[(test_1_idx, step+1)], test_images[(test_2_idx, step+1)]])
+            obs = torch.from_numpy(image_data_all).float().to(device)
+            obs = obs.permute((0, 3, 1, 2)).contiguous()
+            _poses = poses_array[step]
+            poses = torch.from_numpy(_poses).float().to(device)
+            # if step == 0:
+            #     print(f"step: {step}")
+            #     last_obs = torch.from_numpy(image_data_1_all).float().to(device)
+            #     last_obs = last_obs.permute((0, 3, 1, 2)).contiguous()
+            #     obs = torch.from_numpy(image_data_2_all).float().to(device)
+            #     obs = obs.permute((0, 3, 1, 2)).contiguous()
+            #     _poses = np.array([[0.2, 0.0, 0.0], [0.2, 0.0, 0.0]])
+            #     poses = torch.from_numpy(_poses).float().to(device)
+            # elif step == 1:
+            #     print(f"step: {step}")
+            #     last_obs = torch.from_numpy(image_data_2_all).float().to(device)
+            #     last_obs = last_obs.permute((0, 3, 1, 2)).contiguous()
+            #     obs = torch.from_numpy(image_data_3_all).float().to(device)
+            #     obs = obs.permute((0, 3, 1, 2)).contiguous()
+            #     _poses = np.array([[0.4, 0.0, 0.0], [0.2, 0.0, 0.17587]])
+            #     poses = torch.from_numpy(_poses).float().to(device)
+            # _poses = np.asarray([infos[env_idx]['sensor_pose'] for env_idx in range(num_scenes)])
+            # print(f"New poses: {_poses}")
+            # last_obs = torch.from_numpy(image_data_1_1).float().to(device)
+            # obs = torch.from_numpy(image_data_1_2).float().to(device)
+
+            # print(f"Original obs: {original_obs}")
+            # print(f"Original obs shape: {original_obs.size()}")
+            # print(f"Obs: {obs}")
+            # print(f"Obs shape: {obs.size()}")
+            # print(f"Original last_obs: {original_last_obs}")
+            # print(f"Original last_obs shape: {original_last_obs.size()}")
+            # print(f"last_obs: {last_obs}")
+            # print(f"Last_obs shape: {last_obs.size()}")
+            # print(f"Original poses: {original_poses}")
+            # print(f"Original poses shape: {original_poses.size()}")
+            print(f"Local poses : {local_pose}")
+            # ///////////////////////////////////////////////////////////////// TESTING
 
 
             _, _, local_map[:, 0, :, :], local_map[:, 1, :, :], _, local_pose = \
@@ -567,7 +658,8 @@ def test():
             
             # //////////////////////////////////////////////////////////////////
             local_map_draw = local_map
-            if step%5 ==0:
+
+            if step%1 ==0:
                 obs_all = _process_obs_for_display(obs)
                 _ims = [transform_rgb_bgr(obs_all[0]), transform_rgb_bgr(obs_all[1])]
 
@@ -583,8 +675,11 @@ def test():
                 axis[1][1].imshow(imgs_2[0], cmap='gray')
                 axis[1][2].imshow(imgs_2[1], cmap='gray')
                 axis[1][0].imshow(_ims[1])
-                plt.savefig(f"imgs/img_0_{step}.png")
+                plt.savefig(f"imgs/test_{step}.png")
 
+            obs = original_obs
+            last_obs = original_last_obs
+            poses = original_poses
             # //////////////////////////////////////////////////////////////////
 
 

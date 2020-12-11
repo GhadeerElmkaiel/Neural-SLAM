@@ -15,6 +15,9 @@ import gym
 
 import cv2
 import matplotlib.pyplot as plt
+
+plt.ion()
+
 import PIL as Image
 import random
 
@@ -25,6 +28,10 @@ from utils.optimization import get_optimizer
 from utils.storage import GlobalRolloutStorage, FIFOMemory
 
 import algo
+
+from helping_functions import draw_local_maps
+from IPython.display import clear_output
+
 
 # import pyrealsense2 as rs
 
@@ -46,8 +53,10 @@ args.load_slam = 'pretrained_models/model_best.slam'
 args.load_global = 'pretrained_models/model_best.global'
 args.load_local = 'pretrained_models/model_best.local'
 args.map_size_cm = 2400
-args.task_config = 'tasks/pointnav_test.yaml'
-args.seed = 5
+args.task_config = 'tasks/pointnav_mp3d.yaml'
+args.split = 'val_mini'
+# args.task_config = 'tasks/pointnav_test.yaml'
+args.seed = 1
 # args.num_episodes = 1
 # args.max_episode_length = 20
 
@@ -436,6 +445,10 @@ def test():
 
     torch.set_grad_enabled(False)
 
+    # fig, axis = plt.subplots(1,3)
+    fig, axis = plt.subplots(2,3)
+    # a = [[1, 0, 1], [1, 0, 1], [1, 0, 1]]
+    # plt.imshow(a)
 
     for ep_num in range(num_episodes):
         for step in range(args.max_episode_length):
@@ -474,6 +487,17 @@ def test():
             # ------------------------------------------------------------------
             # Env step
             obs, rew, done, infos = envs.step(l_action)
+
+            # //////////////////////////////////////////////////////////////////
+            # obs_all = _process_obs_for_display(obs)
+            # _ims = [transform_rgb_bgr(obs_all[0]), transform_rgb_bgr(obs_all[1])]
+
+            # ax1.imshow(_ims[0])
+            # ax2.imshow(_ims[1])
+            # plt.savefig(f"imgs/img_0_{step}.png")
+            # # plt.clf()
+
+            # //////////////////////////////////////////////////////////////////
 
             l_masks = torch.FloatTensor([0 if x else 1
                                          for x in done]).to(device)
@@ -515,7 +539,16 @@ def test():
                  in range(num_scenes)])
             ).float().to(device)
 
-            # print(f"\n poses : {poses}\n")
+            # print(f"\n last_obs : {last_obs}\n")
+            # print(f"\n obs : {obs}\n")
+
+                
+            # obs = torch.from_numpy(obs_).float().to(self.device)
+            obs_cpu = obs.detach().cpu().numpy()
+            last_obs_cpu = last_obs.detach().cpu().numpy()
+            print(f"obs shape: {obs_cpu.shape}")
+            print(f"last_obs shape: {last_obs_cpu.shape}")
+
 
             _, _, local_map[:, 0, :, :], local_map[:, 1, :, :], _, local_pose = \
                 nslam_module(last_obs, obs, poses, local_map[:, 0, :, :],
@@ -530,6 +563,31 @@ def test():
                                 int(c * 100.0 / args.map_resolution)]
 
                 local_map[e, 2:, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
+
+            
+            # //////////////////////////////////////////////////////////////////
+            local_map_draw = local_map
+            if step%5 ==0:
+                obs_all = _process_obs_for_display(obs)
+                _ims = [transform_rgb_bgr(obs_all[0]), transform_rgb_bgr(obs_all[1])]
+
+                imgs_1 = local_map_draw[0, :, :, :].cpu().numpy()
+                imgs_2 = local_map_draw[1, :, :, :].cpu().numpy()
+
+                # axis[1].imshow(imgs_1[0], cmap='gray')
+                # axis[2].imshow(imgs_1[1], cmap='gray')
+                # axis[0].imshow(_ims[0])
+                axis[0][1].imshow(imgs_1[0], cmap='gray')
+                axis[0][2].imshow(imgs_1[1], cmap='gray')
+                axis[0][0].imshow(_ims[0])
+                axis[1][1].imshow(imgs_2[0], cmap='gray')
+                axis[1][2].imshow(imgs_2[1], cmap='gray')
+                axis[1][0].imshow(_ims[1])
+                plt.savefig(f"imgs/img_0_{step}.png")
+
+            # //////////////////////////////////////////////////////////////////
+
+
             # ------------------------------------------------------------------
 
             # ------------------------------------------------------------------
